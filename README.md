@@ -7,10 +7,10 @@ Expo (SDK 57, TypeScript). Разработка ведётся из чата с 
 
 ## Телефон (UserLAnd, Ubuntu/Debian)
 
-Один раз:
+Один раз (в чистом Debian из UserLAnd нет сертификатов, поэтому сначала ставим их):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/abieahma/mcombat/main/phone/setup.sh | bash
+sudo apt-get update && sudo apt-get install -y ca-certificates curl && curl -fsSL https://raw.githubusercontent.com/abieahma/mcombat/main/phone/setup.sh | bash
 ```
 
 Каждый раз, когда садимся работать:

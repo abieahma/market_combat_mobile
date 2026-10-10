@@ -43,6 +43,7 @@ const frameCss = `
     :root:not([data-theme="light"]) { --preview-bg: #0b0d10; --preview-frame: #2a2f37; color-scheme: dark; }
   }
   :root[data-theme="dark"] { --preview-bg: #0b0d10; --preview-frame: #2a2f37; color-scheme: dark; }
+  html { box-sizing: border-box; }
   html, body { margin: 0; background: var(--preview-bg); }
   @media (min-width: 640px) {
     #root {
@@ -65,7 +66,16 @@ const safeInline = (code) =>
     .replace(/<\/script/gi, '<\\/script')
     .replace(/<!--/g, '<\\!--');
 const inlined = scripts.map((code) => `<script>${safeInline(code)}</script>`).join('\n');
-html = html.replace('</body>', () => `${inlined}\n</body>`);
+
+// The chat preview host wraps the page in its own document skeleton
+// (doctype, charset, viewport), so ship the contents only. Strip the
+// wrappers before appending the bundle, so its strings are never touched.
+html = html
+  .replace(/<!DOCTYPE[^>]*>/i, '')
+  .replace(/<\/?(?:html|head|body)\b[^>]*>/gi, '')
+  .replace(/<meta\b[^>]*\b(?:charset|name="viewport"|httpEquiv|http-equiv)\b[^>]*>/gi, '')
+  .trim();
+html = `${html}\n${inlined}\n`;
 
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });

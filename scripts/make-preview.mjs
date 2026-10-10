@@ -56,11 +56,16 @@ const frameCss = `
     }
   }
 </style>`;
-html = html.replace('</head>', `${frameCss}\n</head>`);
+// Replacement callbacks, not strings: minified JS is full of `$&`, `$'` and
+// `$\``, which String.prototype.replace would expand inside a string.
+html = html.replace('</head>', () => `${frameCss}\n</head>`);
 
-const safeInline = (code) => relativize(code).replace(/<\/script/gi, '<\\/script');
+const safeInline = (code) =>
+  relativize(code)
+    .replace(/<\/script/gi, '<\\/script')
+    .replace(/<!--/g, '<\\!--');
 const inlined = scripts.map((code) => `<script>${safeInline(code)}</script>`).join('\n');
-html = html.replace('</body>', `${inlined}\n</body>`);
+html = html.replace('</body>', () => `${inlined}\n</body>`);
 
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });

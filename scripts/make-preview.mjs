@@ -73,7 +73,7 @@ const inlined = scripts.map((code) => `<script>${safeInline(code)}</script>`).jo
 html = html
   .replace(/<!DOCTYPE[^>]*>/i, '')
   .replace(/<\/?(?:html|head|body)\b[^>]*>/gi, '')
-  .replace(/<meta\b[^>]*\b(?:charset|name="viewport"|httpEquiv|http-equiv)\b[^>]*>/gi, '')
+  .replace(/<meta\b[^>]*(?:charset|name="viewport"|httpEquiv|http-equiv)[^>]*>/gi, '')
   .trim();
 html = `${html}\n${inlined}\n`;
 

@@ -1,0 +1,54 @@
+name: Web preview
+
+# On every push to main: build the web version of the app and put a
+# self-contained preview on the `preview` branch, so it can be shown in chat.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: web-preview
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Export web build
+        run: npx expo export --platform web --output-dir dist
+        env:
+          EXPO_NO_TELEMETRY: 1
+
+      - name: Make single-page preview
+        run: node scripts/make-preview.mjs dist preview
+
+      - name: Publish to the preview branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat > preview/meta.json <<EOF
+          {"sha": "${GITHUB_SHA}", "message": $(git log -1 --format=%s | node -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(0,"utf8").trim()))'), "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+          EOF
+          cd preview
+          git init -q -b preview
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Preview of ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" preview
+
+      - name: Type check
+        run: npx tsc --noEmit

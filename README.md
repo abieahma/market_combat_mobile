@@ -1,0 +1,41 @@
+# mcombat
+
+Expo (SDK 57, TypeScript). Разработка ведётся из чата с Claude, результат виден в двух местах:
+
+- **На телефоне в Expo Go** — живьём, с Fast Refresh. Expo dev server работает в UserLAnd на этом же телефоне и сам подтягивает новые коммиты из GitHub.
+- **В чате** — веб-версия, которую GitHub Actions собирает после каждого пуша в `main` и кладёт в ветку `preview`.
+
+## Телефон (UserLAnd, Ubuntu/Debian)
+
+Один раз:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/abieahma/mcombat/main/phone/setup.sh | bash
+```
+
+Каждый раз, когда садимся работать:
+
+```bash
+~/mcombat/phone/dev.sh
+```
+
+Потом в Expo Go: **Enter URL manually** → `exp://127.0.0.1:8081`.
+
+Править файлы на телефоне не нужно: локальные правки мешают автоподтягиванию.
+
+## Как это устроено
+
+| Файл | Зачем |
+|---|---|
+| `App.tsx` | Корневой экран приложения |
+| `phone/setup.sh` | Установка Node.js 22, клонирование, `npm install` |
+| `phone/dev.sh` | `expo start --localhost` + `git pull` каждые 5 с |
+| `phone/fix-network.cjs` | Обход ошибки `uv_interface_addresses` у Node под proot |
+| `.github/workflows/web-preview.yml` | Веб-сборка → ветка `preview` |
+| `scripts/make-preview.mjs` | Склейка веб-сборки в одну страницу для чата |
+
+## Если что-то не так
+
+- **Expo Go пишет про несовместимую версию SDK** — обнови Expo Go в Play Маркете; проект на SDK 57.
+- **Изменения не доезжают** — смотри строки `[sync]` в терминале UserLAnd; `git status` покажет локальные правки.
+- **Красный экран после смены зависимостей** — перезапусти `dev.sh` (Ctrl+C и снова).

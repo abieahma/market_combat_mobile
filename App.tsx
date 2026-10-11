@@ -114,7 +114,7 @@ function Root() {
         screen = <WalletScreen onBack={() => setRoute({ name: 'hub' })} />;
         break;
       case 'inbox':
-        screen = <InboxScreen onBack={() => setRoute({ name: route.back })} />;
+        screen = <InboxScreen onBack={() => setRoute(route.back === 'settings' ? { name: 'settings' } : { name: 'hub' })} />;
         break;
       case 'duel':
         screen = (

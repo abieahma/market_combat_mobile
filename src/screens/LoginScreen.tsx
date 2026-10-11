@@ -60,13 +60,12 @@ export function LoginScreen({ onInbox }: { onInbox: () => void }) {
     }
   }, [haptic]);
 
-  // A new email arrived: offer to paste its code.
+  // Codes that arrived by email, newest per address: offered for pasting.
+  const [codesByEmail, setCodesByEmail] = useState<Record<string, string>>({});
+  useEffect(() => server.dev.onInbox((m) => setCodesByEmail((c) => ({ ...c, [m.to]: m.code }))), []);
   useEffect(() => {
-    if (step.kind !== 'code') return;
-    return server.dev.onInbox((m) => {
-      if (m.to === step.email) setArrivedCode(m.code);
-    });
-  }, [step]);
+    if (step.kind === 'code') setArrivedCode(codesByEmail[step.email] ?? null);
+  }, [step, codesByEmail]);
 
   // Waiting for the Telegram bot: ask the server every second.
   useEffect(() => {

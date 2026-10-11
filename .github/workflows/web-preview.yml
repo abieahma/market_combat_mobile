@@ -5,8 +5,7 @@ name: Web preview
 # result can be checked and shown in chat.
 on:
   push:
-    # main stays here until the branch is renamed on GitHub.
-    branches: [master, main]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -42,6 +41,14 @@ jobs:
           npx tsc --noEmit 2>&1 | tee report/typecheck.log
           exit ${PIPESTATUS[0]}
 
+      - name: Server stub tests
+        id: stubtests
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          npm run -s test:stub 2>&1 | tee report/stub-tests.log
+          exit ${PIPESTATUS[0]}
+
       - name: Export web build
         id: export
         if: steps.install.outcome == 'success'
@@ -64,6 +71,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INSTALL: ${{ steps.install.outcome }}
           TYPECHECK: ${{ steps.typecheck.outcome }}
+          STUBTESTS: ${{ steps.stubtests.outcome }}
           EXPORT: ${{ steps.export.outcome }}
           PREVIEW: ${{ steps.preview.outcome }}
         run: |
@@ -74,7 +82,7 @@ jobs:
             const message = execSync("git log -1 --format=%s").toString().trim();
             const status = {
               sha: process.env.GITHUB_SHA, message, builtAt: new Date().toISOString(),
-              install: process.env.INSTALL, typecheck: process.env.TYPECHECK,
+              install: process.env.INSTALL, typecheck: process.env.TYPECHECK, stubTests: process.env.STUBTESTS,
               export: process.env.EXPORT, preview: process.env.PREVIEW,
             };
             require("fs").writeFileSync("preview/meta.json", JSON.stringify(status, null, 2));
@@ -88,5 +96,5 @@ jobs:
           git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" preview
 
       - name: Fail if anything failed
-        if: steps.typecheck.outcome != 'success' || steps.export.outcome != 'success'
+        if: steps.typecheck.outcome != 'success' || steps.stubtests.outcome != 'success' || steps.export.outcome != 'success'
         run: exit 1

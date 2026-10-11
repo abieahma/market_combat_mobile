@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUnusedLocals": true,
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "CommonJS",
+    "rootDir": "src",
+    "outDir": ".stub-build",
+    "skipLibCheck": true
+  },
+  "files": [
+    "src/api/contract.ts",
+    "src/api/transport.ts",
+    "src/api/client.ts",
+    "src/mock-server/db.ts",
+    "src/mock-server/server.ts",
+    "src/mock-server/transport.ts",
+    "src/mock-server/wallet-service.ts",
+    "src/wallet/ledger.ts",
+    "src/game/duel.ts",
+    "src/game/rng.ts"
+  ]
+}

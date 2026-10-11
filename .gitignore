@@ -42,3 +42,6 @@ yarn-error.*
 
 # chat preview output
 /preview
+
+# server stub test build
+/.stub-build

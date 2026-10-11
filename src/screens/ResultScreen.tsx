@@ -1,11 +1,28 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { rewardForPlace } from '../game/duel';
 import { useStore } from '../state/store';
 import { AbieAmount, Button } from '../ui/kit';
 import { radius, space, type } from '../ui/theme';
 import { DuelResult } from './DuelScreen';
 
-export function ResultScreen({ result, onAgain, onHub }: { result: DuelResult; onAgain: () => void; onHub: () => void }) {
+export type RewardState = { state: 'saving' } | { state: 'done'; amount: number } | { state: 'error' };
+
+export function ResultScreen({
+  result,
+  reward,
+  onRetry,
+  onAgain,
+  onHub,
+  starting,
+}: {
+  result: DuelResult;
+  /** The server's answer about the reward for this match. */
+  reward: RewardState;
+  onRetry: () => void;
+  onAgain: () => void;
+  onHub: () => void;
+  starting: boolean;
+}) {
   const { colors, t, fmt } = useStore();
   const won = result.myPlace === 1;
   const me = result.standings.find((s) => s.trader.id === 'me');
@@ -20,7 +37,19 @@ export function ResultScreen({ result, onAgain, onHub }: { result: DuelResult; o
 
       <View style={[styles.reward, { backgroundColor: colors.goldSoft, borderColor: colors.gold }]}>
         <Text style={[type.label, { color: colors.gold }]}>{t('result.reward')}</Text>
-        <AbieAmount amount={result.reward} size="lg" signed />
+        {reward.state === 'done' && <AbieAmount amount={reward.amount} size="lg" signed />}
+        {reward.state === 'saving' && (
+          <View style={styles.saving}>
+            <ActivityIndicator color={colors.gold} />
+            <Text style={[type.body, { color: colors.muted }]}>{t('net.saving')}</Text>
+          </View>
+        )}
+        {reward.state === 'error' && (
+          <View style={styles.saving}>
+            <Text style={[type.body, { color: colors.down }]}>{t('net.rewardFailed')}</Text>
+            <Button variant="ghost" label={t('net.retry')} onPress={onRetry} />
+          </View>
+        )}
       </View>
 
       {me && (
@@ -58,7 +87,7 @@ export function ResultScreen({ result, onAgain, onHub }: { result: DuelResult; o
       </View>
 
       <View style={styles.actions}>
-        <Button label={t('result.again')} onPress={onAgain} big />
+        <Button label={t('result.again')} onPress={onAgain} big disabled={starting || reward.state === 'saving'} />
         <Button label={t('result.toHub')} onPress={onHub} variant="ghost" />
       </View>
     </ScrollView>
@@ -79,4 +108,5 @@ const styles = StyleSheet.create({
   rowChange: { fontSize: 14, fontWeight: '700' },
   rowReward: { width: 40, textAlign: 'right', fontSize: 14, fontWeight: '800' },
   actions: { gap: space.md, marginTop: space.sm },
+  saving: { alignItems: 'center', gap: space.sm },
 });

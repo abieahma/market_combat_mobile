@@ -3,6 +3,7 @@
 // from the app's cache. The parts that stand in for the outside world
 // (email delivery, the Telegram bot, Google) are under `dev`.
 
+import { NICKNAME_MAX, NICKNAME_MIN } from '../api/contract';
 import type {
   Account,
   AuthProvider,
@@ -28,8 +29,6 @@ export const EMAIL_CODE_TTL_MS = 10 * 60 * 1000;
 export const EMAIL_RESEND_MS = 30 * 1000;
 export const EMAIL_MAX_ATTEMPTS = 5;
 export const BOT_CHALLENGE_TTL_MS = 5 * 60 * 1000;
-export const NICKNAME_MIN = 2;
-export const NICKNAME_MAX = 16;
 export const TELEGRAM_BOT = 'MarketCombatBot';
 
 type AccountRow = Account;
@@ -370,9 +369,11 @@ export class MockServer {
         .values()
         .sort((a, b) => b.ts - a.ts);
     },
-    onInbox: (fn: (m: InboxMessage) => void) => {
+    onInbox: (fn: (m: InboxMessage) => void): (() => void) => {
       this.inboxListeners.add(fn);
-      return () => this.inboxListeners.delete(fn);
+      return () => {
+        this.inboxListeners.delete(fn);
+      };
     },
     /**
      * What the Telegram bot reports after the player pressed the button:

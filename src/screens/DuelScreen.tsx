@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { PriceChart } from '../components/PriceChart';
 import {
@@ -11,7 +11,6 @@ import {
   LEVERAGES,
   MATCH_TICKS,
   priceAt,
-  rewardForPlace,
   secondsLeft,
   Side,
   Standing,
@@ -21,6 +20,7 @@ import {
   TICK_MS,
   unrealizedPnl,
 } from '../game/duel';
+import type { MatchAction } from '../api/contract';
 import { StringKey } from '../i18n/strings';
 import { useStore } from '../state/store';
 import { ArrowDown, ArrowUp } from '../ui/icons';
@@ -31,7 +31,8 @@ export interface DuelResult {
   matchId: string;
   standings: Standing[];
   myPlace: number;
-  reward: number;
+  /** What the player did, by match tick; the server will replay it. */
+  actions: MatchAction[];
 }
 
 const ME = 'me';
@@ -46,12 +47,23 @@ function clock(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-export function DuelScreen({ onFinish, onLeave }: { onFinish: (r: DuelResult) => void; onLeave: () => void }) {
+export function DuelScreen({
+  matchId,
+  seed,
+  onFinish,
+  onLeave,
+}: {
+  matchId: string;
+  /** Chosen by the server, so every client of the match sees the same prices. */
+  seed: number;
+  onFinish: (r: DuelResult) => void;
+  onLeave: () => void;
+}) {
   const { colors, t, fmt, profile, haptic } = useStore();
-  const seed = useMemo(() => (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0, []);
   const [duel, setDuel] = useState<DuelState>(() =>
-    createDuel(seed, [{ id: ME, name: profile.nickname, isBot: false }, ...BOTS.map((b) => ({ ...b, isBot: true }))]),
+    createDuel(seed, [{ id: ME, name: profile?.nickname ?? 'You', isBot: false }, ...BOTS.map((b) => ({ ...b, isBot: true }))]),
   );
+  const actions = useRef<MatchAction[]>([]);
   const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS);
   const [leverage, setLeverage] = useState<Leverage>(2);
   const [leaveArmed, setLeaveArmed] = useState(false);
@@ -87,11 +99,11 @@ export function DuelScreen({ onFinish, onLeave }: { onFinish: (r: DuelResult) =>
         const final = standings(duel);
         const myPlace = final.find((s) => s.trader.id === ME)?.place ?? final.length;
         haptic(myPlace === 1 ? 'success' : 'warning');
-        const result: DuelResult = { matchId: String(seed), standings: final, myPlace, reward: rewardForPlace(myPlace) };
+        const result: DuelResult = { matchId, standings: final, myPlace, actions: actions.current };
         setTimeout(() => finishRef.current(result), 900);
       }
     }
-  }, [duel, haptic, seed, t]);
+  }, [duel, haptic, matchId, t]);
 
   useEffect(() => {
     if (!toast) return;
@@ -113,15 +125,29 @@ export function DuelScreen({ onFinish, onLeave }: { onFinish: (r: DuelResult) =>
   const news = activeNews(duel);
   const canTrade = live;
 
+  // Applies a player action and remembers it (once) with the tick it happened on.
+  const act = (a: { type: 'open'; side: Side; leverage: Leverage } | { type: 'close' }) =>
+    setDuel((d) => {
+      const next = applyAction(d, ME, a);
+      const before = d.traders.find((tr) => tr.id === ME);
+      const after = next.traders.find((tr) => tr.id === ME);
+      const changed = before?.position !== after?.position;
+      const last = actions.current[actions.current.length - 1];
+      if (changed && !(last && last.tick === d.tick && last.type === a.type)) {
+        actions.current.push(a.type === 'open' ? { tick: d.tick, type: 'open', side: a.side, leverage: a.leverage } : { tick: d.tick, type: 'close' });
+      }
+      return next;
+    });
+
   const trade = (side: Side) => {
     if (!canTrade) return;
     haptic('tap');
-    setDuel((d) => applyAction(d, ME, { type: 'open', side, leverage }));
+    act({ type: 'open', side, leverage });
   };
   const close = () => {
     if (!canTrade) return;
     haptic(pnl >= 0 ? 'success' : 'tap');
-    setDuel((d) => applyAction(d, ME, { type: 'close' }));
+    act({ type: 'close' });
   };
 
   const up = colors.up;

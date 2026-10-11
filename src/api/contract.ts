@@ -117,6 +117,9 @@ export interface MeResponse {
   profile: Profile;
 }
 
+export const NICKNAME_MIN = 2;
+export const NICKNAME_MAX = 16;
+
 /** PATCH /v1/me/profile */
 export interface ProfilePatch {
   nickname?: string;

@@ -8,8 +8,20 @@ import { CandlesIcon, ClockIcon, SlidersIcon, UsersIcon } from '../ui/icons';
 import { BalancePill, Button, SectionLabel } from '../ui/kit';
 import { radius, space, type } from '../ui/theme';
 
-export function HubScreen({ onPlay, onSettings }: { onPlay: (id: GameId) => void; onSettings: () => void }) {
+export function HubScreen({
+  onPlay,
+  onSettings,
+  onWallet,
+  starting,
+}: {
+  onPlay: (id: GameId) => void;
+  onSettings: () => void;
+  onWallet: () => void;
+  /** A match is being opened on the server. */
+  starting: boolean;
+}) {
   const { colors, t, profile, fmt, haptic } = useStore();
+  const stats = profile?.stats ?? { matches: 0, wins: 0, earned: 0 };
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -18,7 +30,7 @@ export function HubScreen({ onPlay, onSettings }: { onPlay: (id: GameId) => void
           <Text style={[styles.wordTop, { color: colors.gold }]}>MARKET</Text>
           <Text style={[styles.wordBottom, { color: colors.text }]}>COMBAT</Text>
         </View>
-        <BalancePill />
+        <BalancePill onPress={onWallet} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t('common.settings')}
@@ -35,19 +47,19 @@ export function HubScreen({ onPlay, onSettings }: { onPlay: (id: GameId) => void
 
       <View style={[styles.profile, { backgroundColor: colors.surface, borderColor: colors.line }]}>
         <Text style={[styles.nick, { color: colors.text }]} numberOfLines={1}>
-          {profile.nickname}
+          {profile?.nickname ?? ''}
         </Text>
         <View style={styles.stats}>
-          <Stat label={t('stats.matches')} value={fmt(profile.matches)} />
-          <Stat label={t('stats.wins')} value={fmt(profile.wins)} />
-          <Stat label={t('stats.earned')} value={fmt(profile.earned)} gold />
+          <Stat label={t('stats.matches')} value={fmt(stats.matches)} />
+          <Stat label={t('stats.wins')} value={fmt(stats.wins)} />
+          <Stat label={t('stats.earned')} value={fmt(stats.earned)} gold />
         </View>
       </View>
 
       <SectionLabel>{t('hub.games')}</SectionLabel>
 
       {GAMES.map((g) => (
-        <GameCard key={g.id} game={g} onPlay={() => onPlay(g.id)} />
+        <GameCard key={g.id} game={g} onPlay={() => onPlay(g.id)} starting={starting} />
       ))}
 
       <View style={[styles.soon, { borderColor: colors.line }]}>
@@ -70,7 +82,7 @@ function Stat({ label, value, gold }: { label: string; value: string; gold?: boo
   );
 }
 
-function GameCard({ game, onPlay }: { game: GameInfo; onPlay: () => void }) {
+function GameCard({ game, onPlay, starting }: { game: GameInfo; onPlay: () => void; starting: boolean }) {
   const { colors, t } = useStore();
   const [width, setWidth] = useState(0);
   const preview = useMemo(() => generateSeries(20261011).prices.slice(HISTORY_TICKS - 20, HISTORY_TICKS + 140), []);
@@ -110,7 +122,7 @@ function GameCard({ game, onPlay }: { game: GameInfo; onPlay: () => void }) {
         )}
       </View>
 
-      <Button label={t('hub.play')} onPress={onPlay} big />
+      <Button label={t('hub.play')} onPress={onPlay} big disabled={starting} />
     </View>
   );
 }

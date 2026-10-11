@@ -1,28 +1,28 @@
-// App-wide state: UI settings, player profile and the ABIE wallet.
+// App-wide state.
 //
-// For now everything lives on the device. The wallet is kept as a ledger
-// (every credit is an entry with a reason), so it can move to the game
-// server as-is and, later, be mapped onto an on-chain token.
+// The app keeps only device settings, the session key and a cached copy of
+// the profile and balance. Everything that matters lives on the server
+// (today the stub in src/mock-server); the app talks to it through `api`.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, ReactNode, useCallback, useEffect, useMemo, useRef, useState, useContext } from 'react';
 import { Platform, useColorScheme } from 'react-native';
-import { DEFAULT_LANG, formatNumber, isLangCode, LangCode, STRINGS, StringKey } from '../i18n/strings';
+import { ApiClient, createApi } from '../api/client';
+import type { Account, AuthResult, MatchAction, MatchFinished, MatchStarted, Profile } from '../api/contract';
+import { isApiError } from '../api/transport';
+import { DEFAULT_LANG, fill, formatNumber, isLangCode, LangCode, STRINGS, StringKey } from '../i18n/strings';
+import { server } from '../mock-server';
+import { MockTransport, NetworkSim } from '../mock-server/transport';
 import { Colors, PALETTES, Scheme, ThemeMode } from '../ui/theme';
 
-const STORAGE_KEY = 'mcombat.v1';
-export const WELCOME_BONUS = 100;
-const LEDGER_LIMIT = 200;
-export const NICKNAME_MAX = 16;
-
-export interface LedgerEntry {
-  id: string;
-  ts: number;
-  amount: number;
-  reason: 'welcome' | 'match';
-  ref?: string;
-}
+const KEYS = {
+  settings: 'mcombat.settings',
+  session: 'mcombat.session',
+  cache: 'mcombat.cache',
+  net: 'mcombat.net',
+  legacy: 'mcombat.v1',
+};
 
 export interface Settings {
   lang: LangCode;
@@ -30,114 +30,163 @@ export interface Settings {
   haptics: boolean;
 }
 
-export interface Profile {
-  nickname: string;
-  matches: number;
-  wins: number;
-  earned: number;
-}
-
-export interface Wallet {
-  balance: number;
-  ledger: LedgerEntry[];
-}
-
-interface SavedData {
-  version: 1;
-  settings: Settings;
+interface Cache {
+  account: Account;
   profile: Profile;
-  wallet: Wallet;
+  balance: number;
 }
 
+export type AuthStatus = 'loading' | 'signedOut' | 'signedIn';
 export type HapticKind = 'tap' | 'success' | 'warning' | 'error';
 
+const DEFAULT_SETTINGS: Settings = { lang: DEFAULT_LANG, theme: 'dark', haptics: true };
+const DEFAULT_NET: NetworkSim = { latency: true, failures: false };
+
+// The network settings are read on every request, so they live outside React.
+let netSim: NetworkSim = DEFAULT_NET;
+export const api: ApiClient = createApi(new MockTransport(server, () => netSim));
+
+async function readJson<T>(key: string): Promise<T | null> {
+  try {
+    const text = await AsyncStorage.getItem(key);
+    return text ? (JSON.parse(text) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeJson(key: string, value: unknown) {
+  AsyncStorage.setItem(key, JSON.stringify(value)).catch(() => {});
+}
+
+function removeKey(key: string) {
+  AsyncStorage.removeItem(key).catch(() => {});
+}
+
+function sanitizeSettings(raw: unknown): Settings {
+  const s = (raw ?? {}) as Partial<Settings>;
+  return {
+    lang: isLangCode(s.lang) ? s.lang : DEFAULT_SETTINGS.lang,
+    theme: s.theme === 'system' || s.theme === 'light' || s.theme === 'dark' ? s.theme : DEFAULT_SETTINGS.theme,
+    haptics: typeof s.haptics === 'boolean' ? s.haptics : DEFAULT_SETTINGS.haptics,
+  };
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 interface StoreValue {
-  ready: boolean;
+  status: AuthStatus;
   settings: Settings;
-  profile: Profile;
-  wallet: Wallet;
   scheme: Scheme;
   colors: Colors;
   t: (key: StringKey) => string;
+  tf: (key: StringKey, vars: Record<string, string | number>) => string;
   fmt: (value: number, decimals?: number) => string;
   setLang: (lang: LangCode) => void;
   setTheme: (theme: ThemeMode) => void;
   setHaptics: (on: boolean) => void;
-  setNickname: (name: string) => void;
-  recordMatch: (result: { matchId: string; place: number; reward: number }) => void;
   haptic: (kind: HapticKind) => void;
-}
 
-function freshData(): SavedData {
-  const tag = Math.floor(1000 + Math.random() * 9000);
-  return {
-    version: 1,
-    settings: { lang: DEFAULT_LANG, theme: 'dark', haptics: true },
-    profile: { nickname: `Trader${tag}`, matches: 0, wins: 0, earned: 0 },
-    wallet: {
-      balance: WELCOME_BONUS,
-      ledger: [{ id: 'welcome', ts: Date.now(), amount: WELCOME_BONUS, reason: 'welcome' }],
-    },
-  };
-}
+  account: Account | null;
+  profile: Profile | null;
+  balance: number;
+  completeSignIn: (result: AuthResult) => void;
+  logout: () => Promise<void>;
+  refresh: () => Promise<void>;
+  setNickname: (name: string) => Promise<void>;
+  startMatch: () => Promise<MatchStarted>;
+  finishMatch: (matchId: string, place: number, actions: MatchAction[]) => Promise<MatchFinished>;
 
-const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+  net: NetworkSim;
+  setNet: (patch: Partial<NetworkSim>) => void;
+  resetServer: () => Promise<void>;
 
-/** Accepts whatever is in storage and returns valid data, filling gaps from defaults. */
-function sanitize(raw: unknown): SavedData {
-  const base = freshData();
-  if (!raw || typeof raw !== 'object') return base;
-  const r = raw as Partial<SavedData>;
-  const s = (r.settings ?? {}) as Partial<Settings>;
-  const p = (r.profile ?? {}) as Partial<Profile>;
-  const w = (r.wallet ?? {}) as Partial<Wallet>;
-  return {
-    version: 1,
-    settings: {
-      lang: isLangCode(s.lang) ? s.lang : base.settings.lang,
-      theme: s.theme === 'system' || s.theme === 'light' || s.theme === 'dark' ? s.theme : base.settings.theme,
-      haptics: typeof s.haptics === 'boolean' ? s.haptics : base.settings.haptics,
-    },
-    profile: {
-      nickname: typeof p.nickname === 'string' && p.nickname.trim() ? p.nickname.slice(0, NICKNAME_MAX) : base.profile.nickname,
-      matches: num(p.matches, 0),
-      wins: num(p.wins, 0),
-      earned: num(p.earned, 0),
-    },
-    wallet: {
-      balance: num(w.balance, base.wallet.balance),
-      ledger: Array.isArray(w.ledger) ? w.ledger.slice(-LEDGER_LIMIT) : base.wallet.ledger,
-    },
-  };
+  toast: string | null;
+  notify: (message: string) => void;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<SavedData>(freshData);
-  const [ready, setReady] = useState(false);
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [status, setStatus] = useState<AuthStatus>('loading');
+  const [cache, setCache] = useState<Cache | null>(null);
+  const [net, setNetState] = useState<NetworkSim>(DEFAULT_NET);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const systemScheme = useColorScheme();
 
-  useEffect(() => {
-    let alive = true;
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((text) => {
-        if (alive && text) setData(sanitize(JSON.parse(text)));
-      })
-      .catch(() => {})
-      .finally(() => alive && setReady(true));
-    return () => {
-      alive = false;
-    };
+  const saveCache = useCallback((next: Cache | null) => {
+    setCache(next);
+    if (next) writeJson(KEYS.cache, next);
+    else removeKey(KEYS.cache);
   }, []);
 
-  useEffect(() => {
-    if (!ready) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data)).catch(() => {});
-  }, [data, ready]);
+  const signOutLocally = useCallback(() => {
+    api.setToken(null);
+    removeKey(KEYS.session);
+    saveCache(null);
+    setStatus('signedOut');
+  }, [saveCache]);
 
-  const { settings, profile, wallet } = data;
-  const scheme: Scheme = settings.theme === 'system' ? (systemScheme === 'light' ? 'light' : 'dark') : settings.theme;
+  const refresh = useCallback(async () => {
+    try {
+      const [me, wallet] = await Promise.all([api.me.get(), api.wallet.get()]);
+      saveCache({ account: me.account, profile: me.profile, balance: wallet.balance });
+    } catch (e) {
+      if (isApiError(e) && e.code === 'unauthorized') signOutLocally();
+      // Network trouble: keep showing the cached copy.
+    }
+  }, [saveCache, signOutLocally]);
+
+  // Start-up: settings, network simulation, session.
+  useEffect(() => {
+    (async () => {
+      const storedSettings = await readJson<Settings>(KEYS.settings);
+      const legacy = storedSettings ? null : await readJson<{ settings?: unknown }>(KEYS.legacy);
+      setSettings(sanitizeSettings(storedSettings ?? legacy?.settings));
+
+      const storedNet = await readJson<NetworkSim>(KEYS.net);
+      if (storedNet) {
+        netSim = { ...DEFAULT_NET, ...storedNet };
+        setNetState(netSim);
+      }
+
+      let token: string | null = null;
+      try {
+        token = await AsyncStorage.getItem(KEYS.session);
+      } catch {
+        token = null;
+      }
+      if (!token) {
+        setStatus('signedOut');
+        return;
+      }
+      api.setToken(token);
+      const cached = await readJson<Cache>(KEYS.cache);
+      if (cached) {
+        setCache(cached);
+        setStatus('signedIn');
+        refresh();
+      } else {
+        try {
+          const [me, wallet] = await Promise.all([api.me.get(), api.wallet.get()]);
+          saveCache({ account: me.account, profile: me.profile, balance: wallet.balance });
+          setStatus('signedIn');
+        } catch {
+          signOutLocally();
+        }
+      }
+    })();
+  }, [refresh, saveCache, signOutLocally]);
+
+  const updateSettings = useCallback((patch: Partial<Settings>) => {
+    setSettings((s) => {
+      const next = { ...s, ...patch };
+      writeJson(KEYS.settings, next);
+      return next;
+    });
+  }, []);
 
   const haptic = useCallback(
     (kind: HapticKind) => {
@@ -157,44 +206,91 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [settings.haptics],
   );
 
+  const notify = useCallback((message: string) => {
+    setToast(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3200);
+  }, []);
+
+  const scheme: Scheme = settings.theme === 'system' ? (systemScheme === 'light' ? 'light' : 'dark') : settings.theme;
+
   const value = useMemo<StoreValue>(() => {
     const dict = STRINGS[settings.lang];
-    const patch = (fn: (d: SavedData) => SavedData) => setData((d) => fn(d));
+    const t = (key: StringKey) => dict[key] ?? STRINGS.en[key];
     return {
-      ready,
+      status,
       settings,
-      profile,
-      wallet,
       scheme,
       colors: PALETTES[scheme],
-      t: (key) => dict[key] ?? STRINGS.en[key],
+      t,
+      tf: (key, vars) => fill(t(key), vars),
       fmt: (v, decimals = 0) => formatNumber(v, decimals, settings.lang),
-      setLang: (lang) => patch((d) => ({ ...d, settings: { ...d.settings, lang } })),
-      setTheme: (theme) => patch((d) => ({ ...d, settings: { ...d.settings, theme } })),
-      setHaptics: (on) => patch((d) => ({ ...d, settings: { ...d.settings, haptics: on } })),
-      setNickname: (name) =>
-        patch((d) => {
-          const nickname = name.replace(/\s+/g, ' ').trim().slice(0, NICKNAME_MAX);
-          return nickname ? { ...d, profile: { ...d.profile, nickname } } : d;
-        }),
-      recordMatch: ({ matchId, place, reward }) =>
-        patch((d) => {
-          if (d.wallet.ledger.some((e) => e.ref === matchId)) return d; // already paid
-          const entry: LedgerEntry = { id: `m-${matchId}`, ts: Date.now(), amount: reward, reason: 'match', ref: matchId };
-          return {
-            ...d,
-            profile: {
-              ...d.profile,
-              matches: d.profile.matches + 1,
-              wins: d.profile.wins + (place === 1 ? 1 : 0),
-              earned: d.profile.earned + reward,
-            },
-            wallet: { balance: d.wallet.balance + reward, ledger: [...d.wallet.ledger, entry].slice(-LEDGER_LIMIT) },
-          };
-        }),
+      setLang: (lang) => updateSettings({ lang }),
+      setTheme: (theme) => updateSettings({ theme }),
+      setHaptics: (on) => updateSettings({ haptics: on }),
       haptic,
+
+      account: cache?.account ?? null,
+      profile: cache?.profile ?? null,
+      balance: cache?.balance ?? 0,
+
+      completeSignIn: (result) => {
+        api.setToken(result.session.token);
+        AsyncStorage.setItem(KEYS.session, result.session.token).catch(() => {});
+        saveCache({ account: result.account, profile: result.profile, balance: cache?.balance ?? 0 });
+        setStatus('signedIn');
+        refresh();
+      },
+      logout: async () => {
+        try {
+          await api.auth.logout();
+        } catch {
+          // The session is dropped on this device either way.
+        }
+        signOutLocally();
+      },
+      refresh,
+      setNickname: async (name) => {
+        const profile = await api.me.patch({ nickname: name });
+        if (cache) saveCache({ ...cache, profile });
+      },
+      startMatch: () => api.matches.start({ game: 'duel' }),
+      finishMatch: async (matchId, place, actions) => {
+        // The server pays a match only once, so retrying after a lost answer is safe.
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          try {
+            const res = await api.matches.finish(matchId, { place, actions });
+            setCache((c) => {
+              const next = c ? { ...c, profile: res.profile, balance: res.tx ? res.tx.balanceAfter : c.balance } : c;
+              if (next) writeJson(KEYS.cache, next);
+              return next;
+            });
+            return res;
+          } catch (e) {
+            lastError = e;
+            if (!isApiError(e) || e.code !== 'network') break;
+            await sleep(400 * (attempt + 1));
+          }
+        }
+        throw lastError;
+      },
+
+      net,
+      setNet: (patch) => {
+        netSim = { ...netSim, ...patch };
+        setNetState(netSim);
+        writeJson(KEYS.net, netSim);
+      },
+      resetServer: async () => {
+        await server.dev.reset();
+        signOutLocally();
+      },
+
+      toast,
+      notify,
     };
-  }, [ready, settings, profile, wallet, scheme, haptic]);
+  }, [status, settings, scheme, haptic, cache, refresh, saveCache, signOutLocally, updateSettings, net, toast, notify]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

@@ -77,13 +77,22 @@ export function AbieAmount({ amount, size = 'md', signed }: { amount: number; si
   );
 }
 
-export function BalancePill() {
-  const { colors, wallet } = useStore();
+export function BalancePill({ onPress }: { onPress?: () => void }) {
+  const { colors, balance, t, haptic } = useStore();
   return (
-    <View style={[styles.pill, { backgroundColor: colors.goldSoft, borderColor: colors.gold }]}>
-      <AbieAmount amount={wallet.balance} size="sm" />
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t('wallet.title')}
+      disabled={!onPress}
+      onPress={() => {
+        haptic('tap');
+        onPress?.();
+      }}
+      style={({ pressed }) => [styles.pill, { backgroundColor: colors.goldSoft, borderColor: colors.gold, opacity: pressed ? 0.75 : 1 }]}
+    >
+      <AbieAmount amount={balance} size="sm" />
       <Text style={[styles.pillTicker, { color: colors.gold }]}>ABIE</Text>
-    </View>
+    </Pressable>
   );
 }
 

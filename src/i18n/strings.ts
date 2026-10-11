@@ -4,6 +4,8 @@
 // Non-English texts were written by Claude and should be checked by native
 // speakers before a store release.
 
+import { ACCOUNTS_STRINGS, AccountsKey } from './accounts';
+
 export const LANGUAGES = [
   { code: 'en', name: 'English' },
   { code: 'ru', name: 'Русский' },
@@ -76,8 +78,8 @@ const en = {
   'settings.aboutText': 'ABIE is the Market Combat network coin. You get it for every match: the higher you place, the bigger the reward.',
 } as const;
 
-export type StringKey = keyof typeof en;
-type Dict = Record<StringKey, string>;
+type CoreKey = keyof typeof en;
+type Dict = Record<CoreKey, string>;
 
 const ru: Dict = {
   'common.back': 'Назад',
@@ -673,7 +675,18 @@ const tk: Dict = {
   'settings.aboutText': 'ABIE — Market Combat-yň tor teňňesi. Ol her duşuşyk üçin berilýär: orun näçe ýokary bolsa, sylag şonça köp.',
 };
 
-export const STRINGS: Record<LangCode, Dict> = { en, ru, uk, be, kk, uz, ky, tg, hy, az, ro, tk };
+const CORE: Record<LangCode, Dict> = { en, ru, uk, be, kk, uz, ky, tg, hy, az, ro, tk };
+
+export type StringKey = CoreKey | AccountsKey;
+
+export const STRINGS = Object.fromEntries(
+  LANGUAGES.map(({ code }) => [code, { ...CORE[code], ...ACCOUNTS_STRINGS[code] }]),
+) as Record<LangCode, Record<StringKey, string>>;
+
+/** Fills {placeholders} in a text. */
+export function fill(text: string, vars: Record<string, string | number>): string {
+  return text.replace(/\{(\w+)\}/g, (m, name: string) => (name in vars ? String(vars[name]) : m));
+}
 
 export function isLangCode(value: unknown): value is LangCode {
   return typeof value === 'string' && LANGUAGES.some((l) => l.code === value);

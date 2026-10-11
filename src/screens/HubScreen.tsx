@@ -81,14 +81,9 @@ function GameCard({ game, onPlay }: { game: GameInfo; onPlay: () => void }) {
         <View style={[styles.cardBadge, { backgroundColor: colors.surfaceAlt }]}>
           <CandlesIcon color={colors.gold} up={colors.up} down={colors.down} size={22} />
         </View>
-        <Text style={[type.title, { color: colors.text, flex: 1 }]} numberOfLines={1}>
+        <Text style={[type.title, { color: colors.text, flex: 1 }]} numberOfLines={2}>
           {t(game.title)}
         </Text>
-        {game.offline && (
-          <View style={[styles.tag, { backgroundColor: colors.surfaceAlt }]}>
-            <Text style={[styles.tagText, { color: colors.muted }]}>{t('hub.vsBots')}</Text>
-          </View>
-        )}
       </View>
 
       <View style={styles.spark} onLayout={(e) => setWidth(Math.round(e.nativeEvent.layout.width))}>
@@ -108,6 +103,11 @@ function GameCard({ game, onPlay }: { game: GameInfo; onPlay: () => void }) {
             {game.seconds} {t('unit.sec')}
           </Text>
         </View>
+        {game.offline && (
+          <View style={[styles.tag, { backgroundColor: colors.surfaceAlt }]}>
+            <Text style={[styles.tagText, { color: colors.muted }]}>{t('hub.vsBots')}</Text>
+          </View>
+        )}
       </View>
 
       <Button label={t('hub.play')} onPress={onPlay} big />
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
   tag: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill },
   tagText: { fontSize: 11, fontWeight: '700' },
   spark: { height: 64 },
-  meta: { flexDirection: 'row', gap: space.lg },
+  meta: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.lg },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   metaText: { fontSize: 14, fontWeight: '700' },
   soon: { borderRadius: radius.lg, borderWidth: 1.5, borderStyle: 'dashed', padding: space.lg, gap: space.xs },

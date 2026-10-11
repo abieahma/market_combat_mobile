@@ -318,7 +318,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: space.sm,
     left: space.sm,
-    right: space.sm,
+    // Leave the price tag column free.
+    right: 72,
     borderRadius: radius.md,
     paddingHorizontal: space.md,
     paddingVertical: space.sm,
@@ -328,7 +329,7 @@ const styles = StyleSheet.create({
   },
   newsTag: { fontSize: 11, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' },
   newsText: { flex: 1, fontSize: 14, fontWeight: '700' },
-  overlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   countdown: { fontSize: 96, fontWeight: '900' },
   toast: { position: 'absolute', bottom: space.md, alignSelf: 'center', paddingHorizontal: space.lg, paddingVertical: space.sm, borderRadius: radius.pill },
   toastText: { fontSize: 15, fontWeight: '800' },

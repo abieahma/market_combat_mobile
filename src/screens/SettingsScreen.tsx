@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { LANGUAGES, StringKey } from '../i18n/strings';
 import { NICKNAME_MAX, useStore } from '../state/store';
 import { AbieCoin, CheckIcon } from '../ui/icons';
@@ -65,7 +65,8 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
           value={settings.haptics}
           onValueChange={setHaptics}
           trackColor={{ false: colors.line, true: colors.gold }}
-          thumbColor={colors.surfaceAlt}
+          thumbColor="#FFFFFF"
+          {...(Platform.OS === 'web' ? { activeThumbColor: '#FFFFFF' } : {})}
         />
       </View>
 

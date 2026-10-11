@@ -21,14 +21,15 @@ export function HubScreen({
   /** A match is being opened on the server. */
   starting: boolean;
 }) {
-  const { colors, t, profile, fmt, haptic, balance } = useStore();
+  const { colors, t, profile, fmt, haptic, balance, scheme } = useStore();
+  const brand = scheme === 'dark' ? colors.goldHi : colors.gold;
   const stats = profile?.stats ?? { matches: 0, wins: 0, earned: 0 };
   const shownBalance = useCountUp(balance);
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
-        <Text style={[styles.wordmark, { color: colors.goldHi }]} numberOfLines={1}>
+        <Text style={[styles.wordmark, { color: brand }]} numberOfLines={1}>
           Market Combat
         </Text>
         <Pressable
@@ -41,7 +42,7 @@ export function HubScreen({
           }}
           style={({ pressed }) => [styles.iconButton, { borderColor: colors.glassEdge, backgroundColor: colors.glass, opacity: pressed ? 0.7 : 1 }]}
         >
-          <SlidersIcon color={colors.goldHi} size={20} />
+          <SlidersIcon color={brand} size={20} />
         </Pressable>
       </View>
 
@@ -105,7 +106,7 @@ function Stat({ label, value, gold }: { label: string; value: string; gold?: boo
 function ChartVignette({ width, height }: { width: number; height: number }) {
   const { colors } = useStore();
   const base = useId().replace(/[^a-zA-Z0-9]/g, '');
-  const prices = useMemo(() => generateSeries(20261011).prices.slice(HISTORY_TICKS - 10, HISTORY_TICKS + 150), []);
+  const prices = useMemo(() => generateSeries(25).prices.slice(HISTORY_TICKS - 10, HISTORY_TICKS + 150), []);
   const lo = Math.min(...prices);
   const hi = Math.max(...prices);
   const padTop = 18;
@@ -186,14 +187,14 @@ const styles = StyleSheet.create({
   balanceText: { flex: 1, minWidth: 0 },
   balanceLabel: { fontSize: 13, letterSpacing: 0.3 },
   amountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  amount: { fontFamily: fonts.display, fontSize: 54, lineHeight: 60, flexShrink: 1 },
+  amount: { fontFamily: fonts.display, fontSize: 54, lineHeight: 60, flexShrink: 1, fontVariant: ['lining-nums'] },
   ticker: { fontSize: 14, fontWeight: '700', letterSpacing: 2 },
   rule: { height: StyleSheet.hairlineWidth },
   playerRow: { gap: 12 },
   nick: { fontFamily: fonts.displaySemi, fontSize: 22 },
   stats: { flexDirection: 'row', gap: space.md },
   stat: { flex: 1, gap: 2 },
-  statValue: { fontFamily: fonts.displaySemi, fontSize: 24, lineHeight: 28 },
+  statValue: { fontFamily: fonts.displaySemi, fontSize: 24, lineHeight: 28, fontVariant: ['lining-nums'] },
   statLabel: { fontSize: 12 },
   section: { fontFamily: fonts.displaySemi, fontSize: 24, marginBottom: -8 },
   tile: { padding: 0 },

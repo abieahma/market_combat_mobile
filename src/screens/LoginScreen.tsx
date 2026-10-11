@@ -34,7 +34,7 @@ function errorKey(e: unknown): StringKey {
 }
 
 export function LoginScreen({ onInbox }: { onInbox: () => void }) {
-  const { colors, t, tf, settings, completeSignIn, haptic } = useStore();
+  const { colors, t, tf, settings, completeSignIn, haptic, scheme } = useStore();
   const [step, setStep] = useState<Step>({ kind: 'menu' });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<StringKey | null>(null);
@@ -138,7 +138,7 @@ export function LoginScreen({ onInbox }: { onInbox: () => void }) {
 
       <View style={styles.brand}>
         <ShinyCoin size={84} />
-        <Text style={[styles.wordmark, { color: colors.goldHi }]}>Market Combat</Text>
+        <Text style={[styles.wordmark, { color: scheme === 'dark' ? colors.goldHi : colors.gold }]}>Market Combat</Text>
         <Text style={[type.body, styles.welcome, { color: colors.muted }]}>{t('auth.welcome')}</Text>
       </View>
 

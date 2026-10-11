@@ -1,6 +1,12 @@
-// Market Combat look: a night trading floor. Ink-blue surfaces, ABIE gold
-// for the coin and the main call to action, green/red only for price
-// direction (long / short, profit / loss).
+// Market Combat look: a boutique at night.
+//
+// Layout concept: content floats on near-black with a warm light rising from
+// below, like a shop window after closing. Panels are smoked glass with a
+// thin gold edge; the ABIE coin and the main buttons are the only solid gold.
+// Green and red appear only for price direction (long / short, profit / loss).
+//
+// Type: Cormorant Garamond (display: wordmark, balances, titles) over the
+// system sans for everything you read in running text.
 
 export type ThemeMode = 'system' | 'dark' | 'light';
 export type Scheme = 'dark' | 'light';
@@ -13,7 +19,15 @@ export interface Colors {
   text: string;
   muted: string;
   faint: string;
+  /** Smoked glass panel fill, its gold edge and the light on its top edge. */
+  glass: string;
+  glassEdge: string;
+  glassHighlight: string;
+  /** Warm light rising from the bottom of the screen. */
+  glow: string;
   gold: string;
+  goldHi: string;
+  goldLo: string;
   goldInk: string;
   goldSoft: string;
   coinInk: string;
@@ -28,54 +42,72 @@ export interface Colors {
 
 export const PALETTES: Record<Scheme, Colors> = {
   dark: {
-    bg: '#0B1020',
-    surface: '#141B2E',
-    surfaceAlt: '#1B2440',
-    line: '#273253',
-    text: '#E9EDF7',
-    muted: '#93A0BE',
-    faint: '#5B6788',
-    gold: '#F3B544',
-    goldInk: '#1D1503',
-    goldSoft: 'rgba(243, 181, 68, 0.14)',
-    coinInk: '#1D1503',
-    up: '#2FD08F',
-    upSoft: 'rgba(47, 208, 143, 0.16)',
-    down: '#FF5C7A',
-    downSoft: 'rgba(255, 92, 122, 0.16)',
-    onSide: '#06111F',
-    news: '#FFD35C',
-    newsInk: '#1D1503',
+    bg: '#090705',
+    surface: '#15110C',
+    surfaceAlt: '#1E1810',
+    line: '#3A2F20',
+    text: '#F6EEDF',
+    muted: '#B4A68F',
+    faint: '#7D705C',
+    glass: 'rgba(255, 236, 200, 0.045)',
+    glassEdge: 'rgba(226, 184, 101, 0.30)',
+    glassHighlight: 'rgba(255, 233, 186, 0.10)',
+    glow: '#C8862C',
+    gold: '#E2B865',
+    goldHi: '#F8DFA0',
+    goldLo: '#A9792C',
+    goldInk: '#1B1205',
+    goldSoft: 'rgba(226, 184, 101, 0.12)',
+    coinInk: '#3A2706',
+    up: '#3DD598',
+    upSoft: 'rgba(61, 213, 152, 0.14)',
+    down: '#FF6B7D',
+    downSoft: 'rgba(255, 107, 125, 0.14)',
+    onSide: '#090705',
+    news: '#F8DFA0',
+    newsInk: '#1B1205',
   },
   light: {
-    bg: '#EEF1F8',
-    surface: '#FFFFFF',
-    surfaceAlt: '#F4F6FB',
-    line: '#D9DFEC',
-    text: '#111727',
-    muted: '#5A6582',
-    faint: '#8D97B0',
-    gold: '#C98A12',
-    goldInk: '#FFFFFF',
-    goldSoft: 'rgba(201, 138, 18, 0.12)',
-    coinInk: '#FFF7E3',
-    up: '#0E9D66',
-    upSoft: 'rgba(14, 157, 102, 0.12)',
-    down: '#D83A5A',
-    downSoft: 'rgba(216, 58, 90, 0.12)',
+    bg: '#F3EDE3',
+    surface: '#FFFCF6',
+    surfaceAlt: '#F7F0E4',
+    line: '#E2D5BF',
+    text: '#1C150C',
+    muted: '#6A5B45',
+    faint: '#A2937B',
+    glass: 'rgba(255, 252, 245, 0.72)',
+    glassEdge: 'rgba(169, 121, 44, 0.32)',
+    glassHighlight: 'rgba(255, 255, 255, 0.9)',
+    glow: '#E7B866',
+    gold: '#AE7F2B',
+    goldHi: '#E9C77D',
+    goldLo: '#8A6120',
+    goldInk: '#FFFDF7',
+    goldSoft: 'rgba(174, 127, 43, 0.10)',
+    coinInk: '#FFF5DD',
+    up: '#0F8F5F',
+    upSoft: 'rgba(15, 143, 95, 0.10)',
+    down: '#C93A4F',
+    downSoft: 'rgba(201, 58, 79, 0.10)',
     onSide: '#FFFFFF',
-    news: '#FFD35C',
-    newsInk: '#1D1503',
+    news: '#F8DFA0',
+    newsInk: '#1B1205',
   },
 };
 
-export const radius = { sm: 8, md: 14, lg: 20, pill: 999 };
+export const fonts = {
+  /** Loaded in App.tsx; the names must match the keys passed to useFonts. */
+  display: 'CormorantGaramond-Bold',
+  displaySemi: 'CormorantGaramond-SemiBold',
+};
+
+export const radius = { sm: 8, md: 14, lg: 22, pill: 999 };
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };
 
 export const type = {
-  display: { fontSize: 28, fontWeight: '800' as const, letterSpacing: -0.5 },
-  title: { fontSize: 20, fontWeight: '700' as const },
+  display: { fontSize: 32, fontFamily: fonts.display, letterSpacing: 0.2 },
+  title: { fontSize: 22, fontFamily: fonts.displaySemi },
   body: { fontSize: 15, lineHeight: 21 },
-  label: { fontSize: 12, fontWeight: '700' as const, letterSpacing: 0.8, textTransform: 'uppercase' as const },
+  label: { fontSize: 17, fontFamily: fonts.displaySemi, letterSpacing: 0.2 },
   num: { fontVariant: ['tabular-nums' as const] },
 };

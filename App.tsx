@@ -1,3 +1,4 @@
+import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { BackHandler, StyleSheet, View } from 'react-native';
@@ -11,6 +12,8 @@ import { ResultScreen, RewardState } from './src/screens/ResultScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { WalletScreen } from './src/screens/WalletScreen';
 import { StoreProvider, useStore } from './src/state/store';
+import { NightBackdrop } from './src/ui/luxe';
+import { fonts } from './src/ui/theme';
 
 type Route =
   | { name: 'hub' }
@@ -21,6 +24,12 @@ type Route =
   | { name: 'result'; result: DuelResult; reward: RewardState };
 
 export default function App() {
+  const [fontsLoaded, fontError] = useFonts({
+    [fonts.display]: require('./assets/fonts/CormorantGaramond-Bold.ttf'),
+    [fonts.displaySemi]: require('./assets/fonts/CormorantGaramond-SemiBold.ttf'),
+  });
+  // Without the fonts the app still works, in the system typeface.
+  if (!fontsLoaded && !fontError) return null;
   return (
     <SafeAreaProvider>
       <StoreProvider>
@@ -145,6 +154,7 @@ function Root() {
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]}>
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      <NightBackdrop />
       {screen}
       <InboxBanner onOpen={openInbox} />
       <Toast />

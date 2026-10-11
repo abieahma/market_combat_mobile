@@ -2,9 +2,10 @@ import { ReactNode } from 'react';
 import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { useStore } from '../state/store';
 import { AbieCoin, ChevronLeft } from './icons';
-import { radius, space, type } from './theme';
+import { GoldFill } from './luxe';
+import { fonts, radius, space, type } from './theme';
 
-type Variant = 'gold' | 'up' | 'down' | 'ghost' | 'surface';
+type Variant = 'gold' | 'up' | 'down' | 'ghost' | 'surface' | 'glass';
 
 export function Button({
   label,
@@ -25,11 +26,12 @@ export function Button({
 }) {
   const { colors, haptic } = useStore();
   const bg = {
-    gold: colors.gold,
+    gold: 'transparent',
     up: colors.up,
     down: colors.down,
     ghost: 'transparent',
     surface: colors.surfaceAlt,
+    glass: colors.glass,
   }[variant];
   const fg = {
     gold: colors.goldInk,
@@ -37,6 +39,7 @@ export function Button({
     down: colors.onSide,
     ghost: colors.text,
     surface: colors.text,
+    glass: colors.text,
   }[variant];
   return (
     <Pressable
@@ -50,11 +53,13 @@ export function Button({
       style={({ pressed }) => [
         styles.button,
         big && styles.buttonBig,
-        { backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.82 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] },
-        variant === 'ghost' && { borderWidth: 1, borderColor: colors.line },
+        { backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.85 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] },
+        (variant === 'ghost' || variant === 'glass') && { borderWidth: 1, borderColor: colors.glassEdge },
+        variant === 'gold' && styles.goldShadow,
         style,
       ]}
     >
+      {variant === 'gold' && <GoldFill rounded={big ? radius.lg : radius.md} />}
       {icon}
       <Text style={[styles.buttonText, big && styles.buttonTextBig, { color: fg }]} numberOfLines={1}>
         {label}
@@ -143,7 +148,8 @@ const styles = StyleSheet.create({
   },
   buttonBig: { minHeight: 60, borderRadius: radius.lg },
   buttonText: { fontSize: 16, fontWeight: '800', letterSpacing: 0.2 },
-  buttonTextBig: { fontSize: 19, textTransform: 'uppercase', letterSpacing: 1 },
+  buttonTextBig: { fontSize: 25, fontFamily: fonts.display, fontWeight: 'normal', letterSpacing: 0.4 },
+  goldShadow: { shadowColor: '#C8862C', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
   amount: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   pill: {
     flexDirection: 'row',

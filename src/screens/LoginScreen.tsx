@@ -9,7 +9,8 @@ import { makeMockGoogleToken, server, TELEGRAM_BOT } from '../mock-server';
 import { api, useStore } from '../state/store';
 import { addSimGoogle, setSimPhone, SimGoogle, simDevice } from '../sim/outside';
 import { Button, SectionLabel } from '../ui/kit';
-import { radius, space, type } from '../ui/theme';
+import { ShinyCoin } from '../ui/luxe';
+import { fonts, radius, space, type } from '../ui/theme';
 
 type Step = { kind: 'menu' } | { kind: 'email' } | { kind: 'code'; email: string; challengeId: string };
 type BotFlow = { kind: 'telegram' | 'phone'; challenge: ChallengeStarted };
@@ -136,17 +137,17 @@ export function LoginScreen({ onInbox }: { onInbox: () => void }) {
       </View>
 
       <View style={styles.brand}>
-        <Text style={[styles.wordTop, { color: colors.gold }]}>MARKET</Text>
-        <Text style={[styles.wordBottom, { color: colors.text }]}>COMBAT</Text>
+        <ShinyCoin size={84} />
+        <Text style={[styles.wordmark, { color: colors.goldHi }]}>Market Combat</Text>
         <Text style={[type.body, styles.welcome, { color: colors.muted }]}>{t('auth.welcome')}</Text>
       </View>
 
       {step.kind === 'menu' && (
         <View style={styles.buttons}>
-          <Button variant="surface" label={t('auth.google')} onPress={() => setGoogleSheet(true)} disabled={!!busy} />
-          <Button variant="surface" label={t('auth.telegram')} onPress={() => startBot('telegram')} disabled={!!busy} />
-          <Button variant="surface" label={t('auth.phone')} onPress={() => startBot('phone')} disabled={!!busy} />
-          <Button variant="surface" label={t('auth.email')} onPress={() => setStep({ kind: 'email' })} disabled={!!busy} />
+          <Button variant="glass" label={t('auth.google')} onPress={() => setGoogleSheet(true)} disabled={!!busy} />
+          <Button variant="glass" label={t('auth.telegram')} onPress={() => startBot('telegram')} disabled={!!busy} />
+          <Button variant="glass" label={t('auth.phone')} onPress={() => startBot('phone')} disabled={!!busy} />
+          <Button variant="glass" label={t('auth.email')} onPress={() => setStep({ kind: 'email' })} disabled={!!busy} />
         </View>
       )}
 
@@ -379,10 +380,9 @@ const styles = StyleSheet.create({
   topRow: { flexDirection: 'row', justifyContent: 'flex-end' },
   langPill: { height: 34, paddingHorizontal: space.md, borderRadius: radius.pill, borderWidth: 1, justifyContent: 'center' },
   langText: { fontSize: 13, fontWeight: '800', letterSpacing: 0.6 },
-  brand: { marginTop: space.xl, marginBottom: space.md, gap: 2 },
-  wordTop: { fontSize: 13, fontWeight: '800', letterSpacing: 5 },
-  wordBottom: { fontSize: 44, fontWeight: '900', letterSpacing: 1, lineHeight: 48 },
-  welcome: { marginTop: space.sm, maxWidth: 320 },
+  brand: { marginTop: space.lg, marginBottom: space.md, gap: space.md, alignItems: 'center' },
+  wordmark: { fontFamily: fonts.display, fontSize: 46, lineHeight: 52, textAlign: 'center' },
+  welcome: { maxWidth: 300, textAlign: 'center' },
   buttons: { gap: space.md },
   form: { gap: space.md },
   input: { height: 50, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: space.md, fontSize: 17, fontWeight: '600' },

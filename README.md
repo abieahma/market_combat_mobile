@@ -27,7 +27,12 @@ sudo apt-get update && sudo apt-get install -y ca-certificates curl && curl -fsS
 
 | Файл | Зачем |
 |---|---|
-| `App.tsx` | Корневой экран приложения |
+| `App.tsx` | Навигация между экранами |
+| `src/screens/` | Хаб игр, настройки, дуэль, итоги матча |
+| `src/game/duel.ts` | Правила «Дуэли на графике»: цена, новости, сделки, боты. Чистый TS, пойдёт на сервер |
+| `src/i18n/strings.ts` | Тексты: английский по умолчанию + языки СНГ |
+| `src/state/store.tsx` | Настройки, профиль и кошелёк ABIE (журнал начислений) |
+| `src/games.ts` | Список игр в хабе |
 | `phone/setup.sh` | Установка Node.js 22, клонирование, `npm install` |
 | `phone/dev.sh` | `expo start --localhost` + `git pull` каждые 5 с |
 | `phone/fix-network.cjs` | Обход ошибки `uv_interface_addresses` у Node под proot |

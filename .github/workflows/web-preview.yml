@@ -1,7 +1,8 @@
 name: Web preview
 
-# On every push to main: build the web version of the app and put a
-# self-contained preview on the `preview` branch, so it can be shown in chat.
+# On every push to main: type-check, build the web version and put a
+# self-contained preview plus build logs on the `preview` branch, so the
+# result can be checked and shown in chat.
 on:
   push:
     branches: [main]
@@ -25,23 +26,58 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        id: install
+        continue-on-error: true
+        run: |
+          mkdir -p report
+          npm install --no-audit --no-fund 2>&1 | tee report/install.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Type check
+        id: typecheck
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          npx tsc --noEmit 2>&1 | tee report/typecheck.log
+          exit ${PIPESTATUS[0]}
 
       - name: Export web build
-        run: npx expo export --platform web --output-dir dist
+        id: export
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
         env:
           EXPO_NO_TELEMETRY: 1
+        run: |
+          npx expo export --platform web --output-dir dist 2>&1 | tee report/export.log
+          exit ${PIPESTATUS[0]}
 
       - name: Make single-page preview
-        run: node scripts/make-preview.mjs dist preview
+        id: preview
+        if: steps.export.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/make-preview.mjs dist preview 2>&1 | tee report/preview.log
 
       - name: Publish to the preview branch
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INSTALL: ${{ steps.install.outcome }}
+          TYPECHECK: ${{ steps.typecheck.outcome }}
+          EXPORT: ${{ steps.export.outcome }}
+          PREVIEW: ${{ steps.preview.outcome }}
         run: |
-          cat > preview/meta.json <<EOF
-          {"sha": "${GITHUB_SHA}", "message": $(git log -1 --format=%s | node -e 'process.stdout.write(JSON.stringify(require("fs").readFileSync(0,"utf8").trim()))'), "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
-          EOF
+          mkdir -p preview
+          cp -r report preview/report
+          node -e '
+            const { execSync } = require("child_process");
+            const message = execSync("git log -1 --format=%s").toString().trim();
+            const status = {
+              sha: process.env.GITHUB_SHA, message, builtAt: new Date().toISOString(),
+              install: process.env.INSTALL, typecheck: process.env.TYPECHECK,
+              export: process.env.EXPORT, preview: process.env.PREVIEW,
+            };
+            require("fs").writeFileSync("preview/meta.json", JSON.stringify(status, null, 2));
+          '
           cd preview
           git init -q -b preview
           git config user.name "github-actions[bot]"
@@ -50,5 +86,6 @@ jobs:
           git commit -q -m "Preview of ${GITHUB_SHA::7}"
           git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" preview
 
-      - name: Type check
-        run: npx tsc --noEmit
+      - name: Fail if anything failed
+        if: steps.typecheck.outcome != 'success' || steps.export.outcome != 'success'
+        run: exit 1

@@ -61,8 +61,18 @@ const frameCss = `
 // `$\``, which String.prototype.replace would expand inside a string.
 html = html.replace('</head>', () => `${frameCss}\n</head>`);
 
+// Fonts are embedded as data: URIs, because the chat preview may refuse to
+// load font files from anywhere else.
+const FONT_TYPES = { ttf: 'font/ttf', otf: 'font/otf', woff: 'font/woff', woff2: 'font/woff2' };
+const inlineFonts = (code) =>
+  code.replace(/(["'])\.\/(assets\/[^"']+\.(ttf|otf|woff2?))\1/g, (match, quote, rel, ext) => {
+    const file = path.join(distDir, rel);
+    if (!fs.existsSync(file)) return match;
+    return `${quote}data:${FONT_TYPES[ext]};base64,${fs.readFileSync(file).toString('base64')}${quote}`;
+  });
+
 const safeInline = (code) =>
-  relativize(code)
+  inlineFonts(relativize(code))
     .replace(/<\/script/gi, '<\\/script')
     .replace(/<!--/g, '<\\!--');
 const inlined = scripts.map((code) => `<script>${safeInline(code)}</script>`).join('\n');

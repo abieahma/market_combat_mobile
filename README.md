@@ -3,14 +3,14 @@
 Expo (SDK 57, TypeScript). Разработка ведётся из чата с Claude, результат виден в двух местах:
 
 - **На телефоне в Expo Go** — живьём, с Fast Refresh. Expo dev server работает в UserLAnd на этом же телефоне и сам подтягивает новые коммиты из GitHub.
-- **В чате** — веб-версия, которую GitHub Actions собирает после каждого пуша в `main` и кладёт в ветку `preview`.
+- **В чате** — веб-версия, которую GitHub Actions собирает после каждого пуша в `master` и кладёт в ветку `preview`.
 
 ## Телефон (UserLAnd, Ubuntu/Debian)
 
 Один раз (в чистом Debian из UserLAnd нет сертификатов, поэтому сначала ставим их):
 
 ```bash
-sudo apt-get update && sudo apt-get install -y ca-certificates curl && curl -fsSL https://raw.githubusercontent.com/abieahma/mcombat/main/phone/setup.sh | bash
+sudo apt-get update && sudo apt-get install -y ca-certificates curl && curl -fsSL https://raw.githubusercontent.com/abieahma/mcombat/master/phone/setup.sh | bash
 ```
 
 Каждый раз, когда садимся работать:

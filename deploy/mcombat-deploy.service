@@ -1,0 +1,14 @@
+[Unit]
+Description=Market Combat auto-deploy (polls GitHub every 20 s)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/mcombat/deploy.env
+ExecStart=/opt/mcombat/repo/deploy/watch.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

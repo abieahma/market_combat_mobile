@@ -2,7 +2,7 @@
 # One-time setup inside UserLAnd (Ubuntu/Debian) on the phone:
 # installs git and Node.js 22, clones the project and installs dependencies.
 #
-#   curl -fsSL https://raw.githubusercontent.com/abieahma/mcombat/main/phone/setup.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/abieahma/mcombat/master/phone/setup.sh | bash
 #
 # Override with env vars: REPO=<git url>  DIR=<folder>
 set -euo pipefail

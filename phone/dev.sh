@@ -19,6 +19,21 @@ ulimit -n 4096 2>/dev/null || true
 
 INTERVAL="${SYNC_INTERVAL:-5}"
 
+# If the branch this copy follows disappeared on GitHub (e.g. main was renamed
+# to master), switch to the repository's current main branch.
+follow_default_branch() {
+  git fetch -q --prune origin 2>/dev/null || return 0
+  local current default
+  current="$(git rev-parse --abbrev-ref HEAD)"
+  git rev-parse -q --verify "refs/remotes/origin/$current" >/dev/null && return 0
+  default="$(git remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p')"
+  if [ -n "$default" ] && [ "$default" != "$current" ]; then
+    echo "[sync] основная ветка теперь $default — переключаюсь"
+    git checkout -q -B "$default" "origin/$default"
+  fi
+}
+
+follow_default_branch
 git pull --ff-only -q || echo "[sync] не удалось подтянуть изменения — проверь интернет или локальные правки (git status)"
 [ -d node_modules ] || npm install --no-audit --no-fund
 
@@ -29,6 +44,7 @@ sync_loop() {
     local before after
     before="$(git rev-parse HEAD)"
     if ! git pull --ff-only -q 2>/dev/null; then
+      follow_default_branch
       if [ "$warned" -eq 0 ]; then
         echo "[sync] git pull не прошёл (нет сети или есть локальные правки). Повторяю каждые ${INTERVAL} с."
         warned=1

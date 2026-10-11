@@ -1,11 +1,12 @@
 name: Web preview
 
-# On every push to main: type-check, build the web version and put a
+# On every push to master: type-check, build the web version and put a
 # self-contained preview plus build logs on the `preview` branch, so the
 # result can be checked and shown in chat.
 on:
   push:
-    branches: [main]
+    # main stays here until the branch is renamed on GitHub.
+    branches: [master, main]
   workflow_dispatch:
 
 permissions:

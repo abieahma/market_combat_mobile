@@ -19,14 +19,18 @@ ulimit -n 4096 2>/dev/null || true
 
 INTERVAL="${SYNC_INTERVAL:-5}"
 
-# If the branch this copy follows disappeared on GitHub (e.g. main was renamed
-# to master), switch to the repository's current main branch.
+# Work follows the `master` branch. If this copy is on another branch (the
+# project started on `main`), or its branch disappeared on GitHub, switch.
 follow_default_branch() {
   git fetch -q --prune origin 2>/dev/null || return 0
   local current default
   current="$(git rev-parse --abbrev-ref HEAD)"
-  git rev-parse -q --verify "refs/remotes/origin/$current" >/dev/null && return 0
-  default="$(git remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p')"
+  if git rev-parse -q --verify refs/remotes/origin/master >/dev/null; then
+    default=master
+  else
+    git rev-parse -q --verify "refs/remotes/origin/$current" >/dev/null && return 0
+    default="$(git remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p')"
+  fi
   if [ -n "$default" ] && [ "$default" != "$current" ]; then
     echo "[sync] основная ветка теперь $default — переключаюсь"
     git checkout -q -B "$default" "origin/$default"

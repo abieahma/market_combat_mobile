@@ -5,6 +5,7 @@
 // speakers before a store release.
 
 import { ACCOUNTS_STRINGS, AccountsKey } from './accounts';
+import { CHARACTERS_STRINGS, CharactersKey } from './characters';
 
 export const LANGUAGES = [
   { code: 'en', name: 'English' },
@@ -677,10 +678,10 @@ const tk: Dict = {
 
 const CORE: Record<LangCode, Dict> = { en, ru, uk, be, kk, uz, ky, tg, hy, az, ro, tk };
 
-export type StringKey = CoreKey | AccountsKey;
+export type StringKey = CoreKey | AccountsKey | CharactersKey;
 
 export const STRINGS = Object.fromEntries(
-  LANGUAGES.map(({ code }) => [code, { ...CORE[code], ...ACCOUNTS_STRINGS[code] }]),
+  LANGUAGES.map(({ code }) => [code, { ...CORE[code], ...ACCOUNTS_STRINGS[code], ...CHARACTERS_STRINGS[code] }]),
 ) as Record<LangCode, Record<StringKey, string>>;
 
 /** Fills {placeholders} in a text. */
@@ -700,4 +701,11 @@ export function formatNumber(value: number, decimals: number, lang: LangCode): s
   const [int, frac] = fixed.split('.');
   const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, group);
   return sign + grouped + (frac ? point + frac : '');
+}
+
+/** Day, month and time, e.g. 19.10 14:32. Same on every engine and language. */
+export function formatWhen(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

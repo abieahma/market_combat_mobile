@@ -36,6 +36,11 @@ export class WalletService {
     return this.db.table<LedgerState>('ledgers').get(accountId) ?? emptyLedger();
   }
 
+  /** True when an operation with this id was already posted. */
+  has(accountId: string, txId: string): boolean {
+    return this.ledger(accountId).txs.some((t) => t.id === txId);
+  }
+
   balance(accountId: string): number {
     return this.ledger(accountId).balance;
   }

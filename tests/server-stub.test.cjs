@@ -121,6 +121,57 @@ const expectErr = async (p, code) => { try { await p; assert.fail('expected ' + 
     assert.equal(a.isNew, true); assert.equal(b.isNew, false); assert.equal(a.account.id, b.account.id);
   });
 
+
+  await t('characters: 4 free skins, first choice is free and only once', async () => {
+    const c = createApi(new MockTransport(server, () => sim));
+    const res = await c.auth.google(makeMockGoogleToken({ sub: 'g-char', email: 'char@gmail.com', name: 'C' }));
+    c.setToken(res.session.token);
+    assert.deepEqual(res.profile.skins, ['valdberik', 'ozonik', 'avitos', 'yandos']);
+    assert.equal(res.profile.character, null);
+    await expectErr(c.me.changeGender('f'), 'conflict');
+    await expectErr(c.me.chooseCharacter('nope', 'm'), 'invalid_input');
+    const p = await c.me.chooseCharacter('ozonik', 'f');
+    assert.equal(p.character, 'ozonik'); assert.equal(p.gender, 'f');
+    await expectErr(c.me.chooseCharacter('avitos', 'm'), 'conflict');
+    assert.equal((await c.wallet.get()).balance, 100);
+    globalThis.charApi = c;
+  });
+
+  await t('appearance: free, once a week', async () => {
+    const c = globalThis.charApi;
+    const p1 = await c.me.changeGender('m');
+    assert.equal(p1.gender, 'm');
+    await expectErr(c.me.changeGender('f'), 'rate_limited');
+    const same = await c.me.changeGender('m');
+    assert.equal(same.gender, 'm');
+    const realNow = server.now;
+    server.now = () => realNow() + 7 * 24 * 3600 * 1000 + 1000;
+    assert.equal((await c.me.changeGender('f')).gender, 'f');
+    server.now = realNow;
+  });
+
+  await t('character change: 5000 ABIE, refused when short, charged once per request', async () => {
+    const c = globalThis.charApi;
+    await expectErr(c.me.changeCharacter('yandos', 'r1'), 'insufficient_funds');
+    const me = await c.me.get();
+    // top up through the wallet service directly (no earning route that big)
+    server.wallet.post(me.account.id, { id: 'test-topup', kind: 'match_reward', amount: 6000 });
+    await server.wallet.flush();
+    await expectErr(c.me.changeCharacter('ozonik', 'r0'), 'invalid_input');
+    const r1 = await c.me.changeCharacter('yandos', 'r2');
+    assert.equal(r1.profile.character, 'yandos');
+    assert.equal(r1.tx.amount, -5000);
+    assert.equal(r1.tx.kind, 'character_change');
+    assert.equal(r1.tx.balanceAfter, 1100);
+    const again = await c.me.changeCharacter('yandos', 'r2');
+    assert.equal(again.tx.id, r1.tx.id);
+    assert.equal((await c.wallet.get()).balance, 1100);
+    const after = await c.me.get();
+    assert.equal(after.profile.gender, 'f');
+    assert.equal(after.profile.character, 'yandos');
+    assert.ok(await server.dev.walletAudit());
+  });
+
   await t('data survives a restart of the server (same storage)', async () => {
     await new Promise((r) => setTimeout(r, 20));
     server = new MockServer(kv);

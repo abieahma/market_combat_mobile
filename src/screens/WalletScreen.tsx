@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { TxKind, WalletTx } from '../api/contract';
-import { StringKey } from '../i18n/strings';
+import { formatWhen as when, StringKey } from '../i18n/strings';
 import { api, useStore } from '../state/store';
 import { AbieCoin } from '../ui/icons';
 import { Button, SectionLabel, TopBar } from '../ui/kit';
@@ -12,12 +12,6 @@ const KIND_LABEL: Record<TxKind, StringKey> = {
   match_reward: 'tx.match_reward',
   character_change: 'tx.character_change',
 };
-
-function when(ts: number) {
-  const d = new Date(ts);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 export function WalletScreen({ onBack }: { onBack: () => void }) {
   const { colors, t, tf, fmt, balance, refresh } = useStore();

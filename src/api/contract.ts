@@ -11,8 +11,16 @@
 
 // ------------------------------------------------------------------ common
 
-export type CharacterId = 'valdberik' | 'ozonik' | 'avitos' | 'yandos';
+export const CHARACTER_IDS = ['valdberik', 'ozonik', 'avitos', 'yandos'] as const;
+export type CharacterId = (typeof CHARACTER_IDS)[number];
 export type Gender = 'm' | 'f';
+/** A skin the player owns. The 4 base skins are the free characters. */
+export type SkinId = string;
+export const FREE_SKINS: SkinId[] = [...CHARACTER_IDS];
+/** Changing character keeps ratings, history and ABIE, but costs this much. */
+export const CHARACTER_CHANGE_COST = 5000;
+/** Appearance (gender) can be changed for free, once per this period. */
+export const GENDER_CHANGE_COOLDOWN_MS = 7 * 24 * 3600 * 1000;
 export type AuthProvider = 'google' | 'telegram' | 'phone' | 'email';
 
 export type ErrorCode =
@@ -52,6 +60,8 @@ export interface Profile {
   character: CharacterId | null;
   gender: Gender | null;
   genderChangedAt: number | null;
+  /** Skins the player owns. */
+  skins: SkinId[];
   stats: { matches: number; wins: number; earned: number };
   respect: { points: number; level: number };
 }
@@ -125,15 +135,18 @@ export interface ProfilePatch {
   nickname?: string;
 }
 
-// ------------------------------------------------- characters (next step)
+// -------------------------------------------------------------- characters
 
-/** POST /v1/me/character: first choice, free. Response: Profile. */
+/** POST /v1/me/character: first choice, free. Response: Profile. 409 if already chosen. */
 export interface ChooseCharacterRequest {
   character: CharacterId;
   gender: Gender;
 }
 
-/** POST /v1/me/character/change: costs ABIE, keeps progress. */
+/**
+ * POST /v1/me/character/change: costs CHARACTER_CHANGE_COST ABIE, keeps
+ * progress. 409 insufficient_funds when the balance is too low.
+ */
 export interface ChangeCharacterRequest {
   character: CharacterId;
   /** Client-generated id; repeating it does not charge twice. */
@@ -144,7 +157,10 @@ export interface ChangeCharacterResult {
   tx: WalletTx;
 }
 
-/** POST /v1/me/gender: free, limited in time. Response: Profile. */
+/**
+ * POST /v1/me/gender: free, once per GENDER_CHANGE_COOLDOWN_MS.
+ * Response: Profile. 429 rate_limited before the period is over.
+ */
 export interface ChangeGenderRequest {
   gender: Gender;
 }

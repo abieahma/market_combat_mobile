@@ -42,6 +42,18 @@
 | `GET /v1/me` | — | `{ account, profile }` |
 | `PATCH /v1/me/profile` | `{ nickname? }` | `Profile`. Ник — от 2 до 16 символов. |
 
+`Profile = { accountId, nickname, character, gender, genderChangedAt, skins, stats, respect }`. Пока персонаж не выбран, `character` и `gender` равны `null`.
+
+## Персонаж и внешность
+
+Персонажи: `valdberik`, `ozonik`, `avitos`, `yandos`. Пол: `m`, `f`. В `skins` лежит коллекция скинов игрока: 4 бесплатных персонажа есть у всех с самого начала, новые скины будут добавляться туда же.
+
+| Запрос | Тело | Ответ |
+|---|---|---|
+| `POST /v1/me/character` | `{ character, gender }` | `Profile`. Первый выбор, бесплатно. 409 `conflict`, если персонаж уже выбран. 403, если скина нет в коллекции. |
+| `POST /v1/me/character/change` | `{ character, requestId }` | `{ profile, tx }`. Списывает 5 000 ABIE (операция `character_change`), статистика, рейтинги, история и ABIE сохраняются. 409 `insufficient_funds`, если не хватает. Повтор с тем же `requestId` возвращает тот же результат и не списывает второй раз. |
+| `POST /v1/me/gender` | `{ gender }` | `Profile`. Бесплатно, не чаще раза в неделю (`genderChangedAt` — время последней смены). Раньше срока — 429 `rate_limited`. Первый выбор пола вместе с персонажем в лимит не входит. |
+
 ## Кошелёк ABIE
 
 Отдельный сервис со своей базой (`abie_wallet`). Каждая операция имеет уникальный `id`: повтор с тем же `id` ничего не меняет, уйти в минус нельзя, история только дописывается.
@@ -64,7 +76,4 @@
 
 ## Следующие шаги (договор есть, реализации пока нет)
 
-- `POST /v1/me/character { character, gender }` — первый выбор персонажа, бесплатно.
-- `POST /v1/me/character/change { character, requestId }` — смена за 5 000 ABIE с сохранением прогресса.
-- `POST /v1/me/gender { gender }` — смена пола, бесплатно, с ограничением по времени.
 - `POST /v1/help/requests { kind }`, `GET /v1/help/requests?box=incoming|mine`, `POST /v1/help/requests/{id}/answer`, `GET /v1/respect` — помощь и респект.

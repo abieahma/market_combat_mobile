@@ -9,12 +9,13 @@ import * as Haptics from 'expo-haptics';
 import { createContext, ReactNode, useCallback, useEffect, useMemo, useRef, useState, useContext } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 import { ApiClient, createApi } from '../api/client';
-import type { Account, AuthResult, MatchAction, MatchFinished, MatchStarted, Profile } from '../api/contract';
+import type { Account, AuthResult, CharacterId, Gender, MatchAction, MatchFinished, MatchStarted, Profile } from '../api/contract';
 import { isApiError } from '../api/transport';
 import { DEFAULT_LANG, fill, formatNumber, isLangCode, LangCode, STRINGS, StringKey } from '../i18n/strings';
 import { server } from '../mock-server';
 import { MockTransport, NetworkSim } from '../mock-server/transport';
-import { Colors, PALETTES, Scheme, ThemeMode } from '../ui/theme';
+import { Colors, paletteFor, Scheme, ThemeMode } from '../ui/theme';
+import { CHARACTERS } from '../world/characters';
 
 const KEYS = {
   settings: 'mcombat.settings',
@@ -74,6 +75,25 @@ function sanitizeSettings(raw: unknown): Settings {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+function requestId(): string {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Repeats a request while the network fails; the server must treat repeats as one. */
+async function withRetry<T>(run: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      return await run();
+    } catch (e) {
+      lastError = e;
+      if (!isApiError(e) || e.code !== 'network') break;
+      await sleep(400 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
+
 interface StoreValue {
   status: AuthStatus;
   settings: Settings;
@@ -96,6 +116,9 @@ interface StoreValue {
   setNickname: (name: string) => Promise<void>;
   startMatch: () => Promise<MatchStarted>;
   finishMatch: (matchId: string, place: number, actions: MatchAction[]) => Promise<MatchFinished>;
+  chooseCharacter: (character: CharacterId, gender: Gender) => Promise<void>;
+  changeCharacter: (character: CharacterId) => Promise<void>;
+  changeGender: (gender: Gender) => Promise<void>;
 
   net: NetworkSim;
   setNet: (patch: Partial<NetworkSim>) => void;
@@ -120,6 +143,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCache(next);
     if (next) writeJson(KEYS.cache, next);
     else removeKey(KEYS.cache);
+  }, []);
+
+  const updateCache = useCallback((change: (c: Cache) => Cache) => {
+    setCache((c) => {
+      const next = c ? change(c) : c;
+      if (next) writeJson(KEYS.cache, next);
+      return next;
+    });
   }, []);
 
   const signOutLocally = useCallback(() => {
@@ -221,7 +252,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       status,
       settings,
       scheme,
-      colors: PALETTES[scheme],
+      colors: paletteFor(scheme, cache?.profile.character ? CHARACTERS[cache.profile.character] : null),
       t,
       tf: (key, vars) => fill(t(key), vars),
       fmt: (v, decimals = 0) => formatNumber(v, decimals, settings.lang),
@@ -252,28 +283,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       refresh,
       setNickname: async (name) => {
         const profile = await api.me.patch({ nickname: name });
-        if (cache) saveCache({ ...cache, profile });
+        updateCache((c) => ({ ...c, profile }));
       },
       startMatch: () => api.matches.start({ game: 'duel' }),
       finishMatch: async (matchId, place, actions) => {
         // The server pays a match only once, so retrying after a lost answer is safe.
-        let lastError: unknown;
-        for (let attempt = 0; attempt < 4; attempt++) {
-          try {
-            const res = await api.matches.finish(matchId, { place, actions });
-            setCache((c) => {
-              const next = c ? { ...c, profile: res.profile, balance: res.tx ? res.tx.balanceAfter : c.balance } : c;
-              if (next) writeJson(KEYS.cache, next);
-              return next;
-            });
-            return res;
-          } catch (e) {
-            lastError = e;
-            if (!isApiError(e) || e.code !== 'network') break;
-            await sleep(400 * (attempt + 1));
-          }
-        }
-        throw lastError;
+        const res = await withRetry(() => api.matches.finish(matchId, { place, actions }));
+        updateCache((c) => ({ ...c, profile: res.profile, balance: res.tx ? res.tx.balanceAfter : c.balance }));
+        return res;
+      },
+      chooseCharacter: async (character, gender) => {
+        const profile = await api.me.chooseCharacter(character, gender);
+        updateCache((c) => ({ ...c, profile }));
+      },
+      changeCharacter: async (character) => {
+        // One id per tap: a repeat after a lost answer is not charged twice.
+        const id = requestId();
+        const res = await withRetry(() => api.me.changeCharacter(character, id));
+        updateCache((c) => ({ ...c, profile: res.profile, balance: res.tx.balanceAfter }));
+      },
+      changeGender: async (gender) => {
+        const profile = await api.me.changeGender(gender);
+        updateCache((c) => ({ ...c, profile }));
       },
 
       net,
@@ -290,7 +321,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toast,
       notify,
     };
-  }, [status, settings, scheme, haptic, cache, refresh, saveCache, signOutLocally, updateSettings, net, toast, notify]);
+  }, [status, settings, scheme, haptic, cache, refresh, saveCache, updateCache, signOutLocally, updateSettings, net, toast, notify]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

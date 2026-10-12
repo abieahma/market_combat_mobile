@@ -23,8 +23,10 @@ export interface Colors {
   glass: string;
   glassEdge: string;
   glassHighlight: string;
-  /** Warm light rising from the bottom of the screen. */
+  /** Warm light rising from the bottom of the screen; tinted by the character's world. */
   glow: string;
+  /** Colour of the character's world (outfit, world name). Gold before a character is chosen. */
+  world: string;
   gold: string;
   goldHi: string;
   goldLo: string;
@@ -53,6 +55,7 @@ export const PALETTES: Record<Scheme, Colors> = {
     glassEdge: 'rgba(226, 184, 101, 0.30)',
     glassHighlight: 'rgba(255, 233, 186, 0.10)',
     glow: '#C8862C',
+    world: '#E2B865',
     gold: '#E2B865',
     goldHi: '#F8DFA0',
     goldLo: '#A9792C',
@@ -79,6 +82,7 @@ export const PALETTES: Record<Scheme, Colors> = {
     glassEdge: 'rgba(169, 121, 44, 0.32)',
     glassHighlight: 'rgba(255, 255, 255, 0.9)',
     glow: '#E7B866',
+    world: '#AE7F2B',
     gold: '#AE7F2B',
     goldHi: '#E9C77D',
     goldLo: '#8A6120',
@@ -94,6 +98,13 @@ export const PALETTES: Record<Scheme, Colors> = {
     newsInk: '#1B1205',
   },
 };
+
+/** Base palette with the world of the player's character laid over it. */
+export function paletteFor(scheme: Scheme, world?: { glow: Record<Scheme, string>; colorLight: string; colorDeep: string } | null): Colors {
+  const base = PALETTES[scheme];
+  if (!world) return base;
+  return { ...base, glow: world.glow[scheme], world: scheme === 'dark' ? world.colorLight : world.colorDeep };
+}
 
 export const fonts = {
   /** Loaded in App.tsx; the names must match the keys passed to useFonts. */

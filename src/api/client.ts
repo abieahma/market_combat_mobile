@@ -3,9 +3,12 @@
 import type {
   ApiErrorBody,
   AuthResult,
+  ChangeCharacterResult,
+  CharacterId,
   ChallengeStarted,
   ChallengeStatus,
   ErrorCode,
+  Gender,
   MatchFinishRequest,
   MatchFinished,
   MatchStarted,
@@ -32,6 +35,9 @@ export interface ApiClient {
   me: {
     get(): Promise<MeResponse>;
     patch(patch: ProfilePatch): Promise<Profile>;
+    chooseCharacter(character: CharacterId, gender: Gender): Promise<Profile>;
+    changeCharacter(character: CharacterId, requestId: string): Promise<ChangeCharacterResult>;
+    changeGender(gender: Gender): Promise<Profile>;
   };
   wallet: {
     get(): Promise<WalletView>;
@@ -72,6 +78,9 @@ export function createApi(transport: Transport): ApiClient {
     me: {
       get: () => call('GET', '/v1/me'),
       patch: (patch) => call('PATCH', '/v1/me/profile', patch),
+      chooseCharacter: (character, gender) => call('POST', '/v1/me/character', { character, gender }),
+      changeCharacter: (character, requestId) => call('POST', '/v1/me/character/change', { character, requestId }),
+      changeGender: (gender) => call('POST', '/v1/me/gender', { gender }),
     },
     wallet: {
       get: () => call('GET', '/v1/wallet'),

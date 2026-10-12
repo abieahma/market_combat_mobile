@@ -4,6 +4,7 @@ import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { BackHandler, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { InboxBanner, Toast } from './src/components/Overlays';
+import { CharacterScreen } from './src/screens/CharacterScreen';
 import { DuelResult, DuelScreen } from './src/screens/DuelScreen';
 import { HubScreen } from './src/screens/HubScreen';
 import { InboxScreen } from './src/screens/InboxScreen';
@@ -18,6 +19,7 @@ import { fonts } from './src/ui/theme';
 type Route =
   | { name: 'hub' }
   | { name: 'settings' }
+  | { name: 'character' }
   | { name: 'wallet' }
   | { name: 'inbox'; back: 'hub' | 'settings' }
   | { name: 'duel'; matchId: string; seed: number }
@@ -40,7 +42,7 @@ export default function App() {
 }
 
 function Root() {
-  const { status, colors, scheme, startMatch, finishMatch, notify, t } = useStore();
+  const { status, colors, scheme, profile, startMatch, finishMatch, notify, t } = useStore();
   const [route, setRoute] = useState<Route>({ name: 'hub' });
   const [loginInbox, setLoginInbox] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -61,7 +63,8 @@ function Root() {
       }
       if (route.name === 'hub') return false;
       if (route.name === 'duel') return true; // leaving a match takes the in-game button
-      setRoute(route.name === 'inbox' && route.back === 'settings' ? { name: 'settings' } : { name: 'hub' });
+      const backToSettings = route.name === 'character' || (route.name === 'inbox' && route.back === 'settings');
+      setRoute(backToSettings ? { name: 'settings' } : { name: 'hub' });
       return true;
     });
     return () => sub.remove();
@@ -104,6 +107,9 @@ function Root() {
     screen = <View style={styles.root} />;
   } else if (status === 'signedOut') {
     screen = loginInbox ? <InboxScreen onBack={() => setLoginInbox(false)} /> : <LoginScreen onInbox={() => setLoginInbox(true)} />;
+  } else if (profile && !profile.character) {
+    // First sign-in: a character is chosen before anything else.
+    screen = <CharacterScreen mode="choose" />;
   } else {
     switch (route.name) {
       case 'hub':
@@ -117,7 +123,16 @@ function Root() {
         );
         break;
       case 'settings':
-        screen = <SettingsScreen onBack={() => setRoute({ name: 'hub' })} onInbox={() => setRoute({ name: 'inbox', back: 'settings' })} />;
+        screen = (
+          <SettingsScreen
+            onBack={() => setRoute({ name: 'hub' })}
+            onInbox={() => setRoute({ name: 'inbox', back: 'settings' })}
+            onCharacter={() => setRoute({ name: 'character' })}
+          />
+        );
+        break;
+      case 'character':
+        screen = <CharacterScreen mode="change" onBack={() => setRoute({ name: 'settings' })} />;
         break;
       case 'wallet':
         screen = <WalletScreen onBack={() => setRoute({ name: 'hub' })} />;

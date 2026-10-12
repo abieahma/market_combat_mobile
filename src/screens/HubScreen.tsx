@@ -1,6 +1,7 @@
 import { useId, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg';
+import { Avatar } from '../components/Avatar';
 import { generateSeries, HISTORY_TICKS } from '../game/duel';
 import { GameId, GAMES, GameInfo } from '../games';
 import { useStore } from '../state/store';
@@ -8,6 +9,7 @@ import { ClockIcon, SlidersIcon, UsersIcon } from '../ui/icons';
 import { Button } from '../ui/kit';
 import { Glass, LiftPressable, ShinyCoin, useCountUp } from '../ui/luxe';
 import { fonts, radius, space, type } from '../ui/theme';
+import { characterName, CHARACTERS, worldColor } from '../world/characters';
 
 export function HubScreen({
   onPlay,
@@ -21,8 +23,10 @@ export function HubScreen({
   /** A match is being opened on the server. */
   starting: boolean;
 }) {
-  const { colors, t, profile, fmt, haptic, balance, scheme } = useStore();
+  const { colors, t, profile, fmt, haptic, balance, scheme, settings } = useStore();
   const brand = scheme === 'dark' ? colors.goldHi : colors.gold;
+  const character = profile?.character ?? null;
+  const world = character ? CHARACTERS[character] : null;
   const stats = profile?.stats ?? { matches: 0, wins: 0, earned: 0 };
   const shownBalance = useCountUp(balance);
 
@@ -64,9 +68,20 @@ export function HubScreen({
           <View style={[styles.rule, { backgroundColor: colors.glassEdge }]} />
 
           <View style={styles.playerRow}>
-            <Text style={[styles.nick, { color: colors.text }]} numberOfLines={1}>
-              {profile?.nickname ?? ''}
-            </Text>
+            <View style={styles.who}>
+              {character && <Avatar character={character} gender={profile?.gender ?? 'm'} size={64} />}
+              <View style={styles.whoText}>
+                <Text style={[styles.nick, { color: colors.text }]} numberOfLines={1}>
+                  {profile?.nickname ?? ''}
+                </Text>
+                {character && world && (
+                  <Text style={styles.worldLine} numberOfLines={2}>
+                    <Text style={[styles.charName, { color: worldColor(character, scheme) }]}>{characterName(character, settings.lang)}</Text>
+                    <Text style={{ color: colors.muted }}>{'  ·  '}{t(world.text.role)}</Text>
+                  </Text>
+                )}
+              </View>
+            </View>
             <View style={styles.stats}>
               <Stat label={t('stats.matches')} value={fmt(stats.matches)} />
               <Stat label={t('stats.wins')} value={fmt(stats.wins)} />
@@ -76,10 +91,10 @@ export function HubScreen({
         </Glass>
       </LiftPressable>
 
-      <Text style={[styles.section, { color: colors.text }]}>{t('hub.games')}</Text>
+      <Text style={[styles.section, { color: colors.text }]}>{t(world ? world.text.games : 'hub.games')}</Text>
 
       {GAMES.map((g) => (
-        <GameTile key={g.id} game={g} onPlay={() => onPlay(g.id)} starting={starting} />
+        <GameTile key={g.id} game={g} onPlay={() => onPlay(g.id)} starting={starting} playLabel={t(world ? world.text.play : 'hub.play')} />
       ))}
 
       <Glass quiet style={styles.soon}>
@@ -138,7 +153,7 @@ function ChartVignette({ width, height }: { width: number; height: number }) {
   );
 }
 
-function GameTile({ game, onPlay, starting }: { game: GameInfo; onPlay: () => void; starting: boolean }) {
+function GameTile({ game, onPlay, starting, playLabel }: { game: GameInfo; onPlay: () => void; starting: boolean; playLabel: string }) {
   const { colors, t } = useStore();
   const [width, setWidth] = useState(0);
 
@@ -170,7 +185,7 @@ function GameTile({ game, onPlay, starting }: { game: GameInfo; onPlay: () => vo
               </View>
             )}
           </View>
-          <Button label={t('hub.play')} onPress={onPlay} big disabled={starting} />
+          <Button label={playLabel} onPress={onPlay} big disabled={starting} />
         </View>
       </Glass>
     </LiftPressable>
@@ -191,7 +206,11 @@ const styles = StyleSheet.create({
   ticker: { fontSize: 14, fontWeight: '700', letterSpacing: 2 },
   rule: { height: StyleSheet.hairlineWidth },
   playerRow: { gap: 12 },
+  who: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  whoText: { flex: 1, minWidth: 0, gap: 2 },
   nick: { fontFamily: fonts.displaySemi, fontSize: 22 },
+  worldLine: { fontSize: 13, lineHeight: 18 },
+  charName: { fontFamily: fonts.display, fontSize: 18 },
   stats: { flexDirection: 'row', gap: space.md },
   stat: { flex: 1, gap: 2 },
   statValue: { fontFamily: fonts.displaySemi, fontSize: 24, lineHeight: 28, fontVariant: ['lining-nums'] },

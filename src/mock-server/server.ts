@@ -3,7 +3,16 @@
 // from the app's cache. The parts that stand in for the outside world
 // (email delivery, the Telegram bot, Google) are under `dev`.
 
-import { NICKNAME_MAX, NICKNAME_MIN } from '../api/contract';
+import {
+  CHARACTER_CHANGE_COST,
+  CHARACTER_IDS,
+  CharacterId,
+  FREE_SKINS,
+  Gender,
+  GENDER_CHANGE_COOLDOWN_MS,
+  NICKNAME_MAX,
+  NICKNAME_MIN,
+} from '../api/contract';
 import type {
   Account,
   AuthProvider,
@@ -178,7 +187,13 @@ export class MockServer {
 
   private profile(accountId: string): Profile {
     const p = this.db.table<Profile>('profiles').get(accountId);
-    return p ?? fail(404, 'not_found', 'No profile');
+    if (!p) return fail(404, 'not_found', 'No profile');
+    // Profiles saved before skins existed own the free ones.
+    return Array.isArray(p.skins) ? p : { ...p, skins: [...FREE_SKINS] };
+  }
+
+  private saveProfile(p: Profile): Profile {
+    return this.db.table<Profile>('profiles').put(p.accountId, { ...p });
   }
 
   private account(accountId: string): Account {
@@ -203,6 +218,7 @@ export class MockServer {
         character: null,
         gender: null,
         genderChangedAt: null,
+        skins: [...FREE_SKINS],
         stats: { matches: 0, wins: 0, earned: 0 },
         respect: { points: 0, level: 0 },
       });
@@ -307,6 +323,52 @@ export class MockServer {
         p.nickname = nickname;
       }
       return this.db.table<Profile>('profiles').put(id, { ...p });
+    });
+
+    // Characters and appearance.
+    const isCharacter = (v: unknown): v is CharacterId => typeof v === 'string' && (CHARACTER_IDS as readonly string[]).includes(v);
+    const isGender = (v: unknown): v is Gender => v === 'm' || v === 'f';
+
+    this.route('POST', '/v1/me/character', ({ req }) => {
+      const id = this.accountIdFor(req);
+      const body = (req.body ?? {}) as { character?: unknown; gender?: unknown };
+      if (!isCharacter(body.character) || !isGender(body.gender)) return fail(400, 'invalid_input', 'Unknown character or gender');
+      const p = this.profile(id);
+      if (p.character) return fail(409, 'conflict', 'Character already chosen; change it instead');
+      if (!p.skins.includes(body.character)) return fail(403, 'forbidden', 'Skin not owned');
+      return this.saveProfile({ ...p, character: body.character, gender: body.gender, genderChangedAt: null });
+    });
+
+    this.route('POST', '/v1/me/character/change', ({ req }) => {
+      const id = this.accountIdFor(req);
+      const body = (req.body ?? {}) as { character?: unknown; requestId?: unknown };
+      if (!isCharacter(body.character) || typeof body.requestId !== 'string' || !body.requestId) {
+        return fail(400, 'invalid_input', 'character and requestId are required');
+      }
+      const p = this.profile(id);
+      if (!p.character) return fail(409, 'conflict', 'Choose a character first');
+      if (!p.skins.includes(body.character)) return fail(403, 'forbidden', 'Skin not owned');
+      const txId = `charchange:${id}:${body.requestId}`;
+      const repeated = this.wallet.has(id, txId);
+      if (!repeated && body.character === p.character) return fail(400, 'invalid_input', 'This is already your character');
+      // The wallet refuses to go below zero; the same requestId never charges twice.
+      const tx = this.wallet.post(id, { id: txId, kind: 'character_change', amount: -CHARACTER_CHANGE_COST, ref: body.character }, this.now());
+      const profile = repeated ? p : this.saveProfile({ ...p, character: body.character });
+      return { profile, tx };
+    });
+
+    this.route('POST', '/v1/me/gender', ({ req }) => {
+      const id = this.accountIdFor(req);
+      const gender = (req.body as { gender?: unknown })?.gender;
+      if (!isGender(gender)) return fail(400, 'invalid_input', 'Unknown gender');
+      const p = this.profile(id);
+      if (!p.character) return fail(409, 'conflict', 'Choose a character first');
+      if (p.gender === gender) return p;
+      const now = this.now();
+      if (p.genderChangedAt && now - p.genderChangedAt < GENDER_CHANGE_COOLDOWN_MS) {
+        return fail(429, 'rate_limited', `Appearance can be changed again at ${p.genderChangedAt + GENDER_CHANGE_COOLDOWN_MS}`);
+      }
+      return this.saveProfile({ ...p, gender, genderChangedAt: now });
     });
 
     // Wallet.

@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { AuthProvider, NICKNAME_MAX } from '../api/contract';
+import { AuthProvider, Gender, GENDER_CHANGE_COOLDOWN_MS, NICKNAME_MAX } from '../api/contract';
 import { isApiError } from '../api/transport';
-import { LANGUAGES, StringKey } from '../i18n/strings';
+import { Avatar } from '../components/Avatar';
+import { formatWhen, LANGUAGES, StringKey } from '../i18n/strings';
+import { GenderToggle } from './CharacterScreen';
 import { useStore } from '../state/store';
 import { AbieCoin, CheckIcon } from '../ui/icons';
 import { Button, SectionLabel, TopBar } from '../ui/kit';
-import { radius, space, ThemeMode, type } from '../ui/theme';
+import { Glass } from '../ui/luxe';
+import { fonts, radius, space, ThemeMode, type } from '../ui/theme';
+import { characterName, CHARACTERS, worldColor } from '../world/characters';
 
 const THEMES: ThemeMode[] = ['system', 'dark', 'light'];
 const THEME_LABEL: Record<ThemeMode, StringKey> = { system: 'theme.system', dark: 'theme.dark', light: 'theme.light' };
@@ -18,9 +22,28 @@ const PROVIDER_LABEL: Record<AuthProvider, string | StringKey> = {
   email: 'auth.emailLabel',
 };
 
-export function SettingsScreen({ onBack, onInbox }: { onBack: () => void; onInbox: () => void }) {
-  const { colors, t, settings, profile, account, setLang, setTheme, setHaptics, setNickname, haptic, logout, net, setNet, resetServer, notify } =
-    useStore();
+export function SettingsScreen({ onBack, onInbox, onCharacter }: { onBack: () => void; onInbox: () => void; onCharacter: () => void }) {
+  const {
+    colors,
+    t,
+    tf,
+    settings,
+    scheme,
+    profile,
+    account,
+    setLang,
+    setTheme,
+    setHaptics,
+    setNickname,
+    changeGender,
+    refresh,
+    haptic,
+    logout,
+    net,
+    setNet,
+    resetServer,
+    notify,
+  } = useStore();
   const savedNick = profile?.nickname ?? '';
   const [nick, setNick] = useState(savedNick);
   const [nickError, setNickError] = useState<StringKey | null>(null);
@@ -39,6 +62,24 @@ export function SettingsScreen({ onBack, onInbox }: { onBack: () => void; onInbo
       setNickError(null);
     } catch (e) {
       setNickError(isApiError(e) && e.code === 'invalid_input' ? 'settings.nicknameRule' : 'net.error');
+    }
+  };
+
+  // Appearance can change once a week; the server keeps the time of the last change.
+  const genderFreeAt = profile?.genderChangedAt ? profile.genderChangedAt + GENDER_CHANGE_COOLDOWN_MS : 0;
+  const genderLocked = genderFreeAt > Date.now();
+  const [genderBusy, setGenderBusy] = useState(false);
+  const pickGender = async (g: Gender) => {
+    if (!profile || g === profile.gender || genderBusy) return;
+    setGenderBusy(true);
+    try {
+      await changeGender(g);
+      haptic('success');
+    } catch (e) {
+      if (isApiError(e) && e.code === 'rate_limited') await refresh();
+      else notify(t('net.error'));
+    } finally {
+      setGenderBusy(false);
     }
   };
 
@@ -66,6 +107,29 @@ export function SettingsScreen({ onBack, onInbox }: { onBack: () => void; onInbo
           </View>
           <Button variant="ghost" label={t('account.logout')} onPress={logout} />
           <Text style={[styles.hint, { color: colors.faint }]}>{t('account.logoutNote')}</Text>
+        </View>
+      )}
+
+      {profile?.character && (
+        <View style={styles.group}>
+          <SectionLabel>{t('char.section')}</SectionLabel>
+          <Glass style={styles.charCard}>
+            <Avatar character={profile.character} gender={profile.gender ?? 'm'} size={72} />
+            <View style={styles.charText}>
+              <Text style={[styles.charName, { color: worldColor(profile.character, scheme) }]} numberOfLines={1}>
+                {characterName(profile.character, settings.lang)}
+              </Text>
+              <Text style={[styles.hint, { color: colors.muted }]} numberOfLines={2}>
+                {t(CHARACTERS[profile.character].text.role)}
+              </Text>
+            </View>
+          </Glass>
+          <Text style={[styles.subLabel, { color: colors.text }]}>{t('char.appearance')}</Text>
+          <GenderToggle value={profile.gender} onChange={pickGender} disabled={genderLocked || genderBusy} />
+          <Text style={[styles.hint, { color: colors.faint }]}>
+            {genderLocked ? tf('char.genderNext', { date: formatWhen(genderFreeAt) }) : t('char.appearanceNote')}
+          </Text>
+          <Button variant="ghost" label={t('char.change')} onPress={onCharacter} />
         </View>
       )}
 
@@ -227,6 +291,10 @@ const styles = StyleSheet.create({
   about: { borderRadius: radius.lg, borderWidth: 1, padding: space.lg, gap: space.sm },
   aboutHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   hint: { fontSize: 13 },
+  charCard: { flexDirection: 'row', alignItems: 'center', gap: space.lg, padding: space.lg },
+  charText: { flex: 1, gap: 2 },
+  charName: { fontFamily: fonts.display, fontSize: 26, lineHeight: 30 },
+  subLabel: { fontSize: 15, fontWeight: '600', marginTop: space.sm },
   idRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, minHeight: 50 },
   idProvider: { width: 84, fontSize: 13, fontWeight: '700' },
   devRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.lg, minHeight: 52 },

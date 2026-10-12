@@ -231,7 +231,7 @@ export function HistoryDetailScreen({ id, onBack }: { id: string; onBack: () => 
         </>
       )}
 
-      {detail?.duel && item && info && <DuelReplay rec={detail.duel} show={(u) => showMoney(info, u)} />}
+      {detail?.duel && item && info && (detail.duel.replayable ? <DuelReplay rec={detail.duel} show={(u) => showMoney(info, u)} /> : <Text style={[tp.body, { color: colors.muted }]}>{t('history.noReplay')}</Text>)}
     </ScrollView>
   );
 }

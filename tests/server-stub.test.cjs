@@ -149,7 +149,7 @@ const expectErr = async (p, code) => { try { await p; assert.fail('expected ' + 
     assert.equal(page.items[0].id, m.matchId);
     assert.deepEqual([page.items[0].place, page.items[0].players, page.items[0].stake], [mine.place, 4, 500]);
     const detail = await api.history.get(m.matchId);
-    assert.deepEqual([detail.duel.seed, detail.duel.endTick, detail.duel.nickname, detail.duel.actions], [m.seed, 150, nickname, actions]);
+    assert.deepEqual([detail.duel.replayable, detail.duel.seed, detail.duel.endTick, detail.duel.nickname, detail.duel.actions], [true, m.seed, 150, nickname, actions]);
     const states = D.replayDuel(detail.duel.seed, detail.duel.stake, detail.duel.nickname, detail.duel.actions, detail.duel.endTick);
     const last = states[states.length - 1];
     assert.equal(last.tick, 150);
@@ -160,6 +160,13 @@ const expectErr = async (p, code) => { try { await p; assert.fail('expected ' + 
     await api.matches.finish(bad.matchId, { place: 3, equity: 100, actions: [{ tick: -1, type: 'open' }, { tick: 5, type: 'open', side: 1, leverage: 7 }, { tick: 6, type: 'close' }] });
     assert.deepEqual((await api.history.get(bad.matchId)).duel.actions, [{ tick: 6, type: 'close' }]);
     assert.equal((await api.history.list()).items.length, 2);
+    // A match saved before the history kept actions has no replay.
+    const old = await api.matches.start({ game: 'duel', stakeLots: 1, requestId: 'h3' });
+    await api.matches.finish(old.matchId, { place: 2, equity: 100, actions: [] });
+    const row = server.db.table('matches').get(old.matchId);
+    delete row.actions;
+    server.db.table('matches').put(old.matchId, row);
+    assert.equal((await api.history.get(old.matchId)).duel.replayable, false);
   });
 
   await t('rate is fixed forever: no route changes a game, publishing again is refused', async () => {

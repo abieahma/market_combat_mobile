@@ -56,6 +56,7 @@ export function registerHistoryRoutes(s: MockServer, kombat: KombatHistory) {
     const m = matches().get(id);
     if (m && m.accountId === accountId && m.finished) {
       const duel: DuelRecord = {
+        replayable: m.actions !== undefined && !m.finished.abandoned,
         seed: m.seed,
         stake: m.stake ?? 0,
         nickname: m.nickname ?? s.profile(accountId).nickname,

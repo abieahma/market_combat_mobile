@@ -65,7 +65,7 @@ export const cardsEn = {
   'kombat.jokerPick': 'What does the joker become?',
   'kombat.play': 'Play',
   'kombat.noEnergy': 'Not enough energy',
-  'kombat.swap': 'Swap it and rest: +{n} energy',
+  'kombat.swap': 'Swap it: +{n} energy',
   'status.stun': 'Stunned',
   'status.shield': 'Shield {n} · {turns}',
   'status.poison': 'Poison {n} · {turns}',
@@ -123,6 +123,7 @@ export const cardsEn = {
   'history.cancelled': 'Cancelled',
   'history.abandoned': 'Not finished',
   'history.place': 'Place {n} of {of}',
+  'history.noReplay': 'This match has no replay: it was played before the history appeared, or the server closed it.',
 } as const;
 
 export type CardsKey = keyof typeof cardsEn;
@@ -248,6 +249,7 @@ const ru: Dict = {
   'history.cancelled': 'Отменён',
   'history.abandoned': 'Не завершён',
   'history.place': '{n} место из {of}',
+  'history.noReplay': 'У этого матча нет повтора: он сыгран до появления истории или закрыт сервером.',
 };
 
 const uk: Dict = {
@@ -370,6 +372,7 @@ const uk: Dict = {
   'history.cancelled': 'Скасовано',
   'history.abandoned': 'Не завершено',
   'history.place': '{n} місце з {of}',
+  'history.noReplay': 'Цей матч не має повтору: його зіграно до появи історії або закрито сервером.',
 };
 
 const be: Dict = {
@@ -492,6 +495,7 @@ const be: Dict = {
   'history.cancelled': 'Адменены',
   'history.abandoned': 'Не завершаны',
   'history.place': '{n} месца з {of}',
+  'history.noReplay': 'У гэтага матча няма паўтору: ён згуляны да з\'яўлення гісторыі або закрыты серверам.',
 };
 
 const kk: Dict = {
@@ -614,6 +618,7 @@ const kk: Dict = {
   'history.cancelled': 'Болдырылмады',
   'history.abandoned': 'Аяқталмады',
   'history.place': '{of} ішінен {n}-орын',
+  'history.noReplay': 'Бұл матчтың қайталауы жоқ: ол тарих пайда болғанға дейін ойналған немесе оны сервер жапқан.',
 };
 
 const uz: Dict = {
@@ -736,6 +741,7 @@ const uz: Dict = {
   'history.cancelled': 'Bekor qilindi',
   'history.abandoned': 'Tugallanmagan',
   'history.place': '{of} tadan {n}-oʻrin',
+  'history.noReplay': 'Bu matchning takrori yoʻq: u tarix paydo boʻlishidan oldin oʻynalgan yoki uni server yopgan.',
 };
 
 const ky: Dict = {
@@ -858,6 +864,7 @@ const ky: Dict = {
   'history.cancelled': 'Жокко чыгарылды',
   'history.abandoned': 'Аяктаган жок',
   'history.place': '{of} ичинен {n}-орун',
+  'history.noReplay': 'Бул матчтын кайталоосу жок: ал тарых пайда болгонго чейин ойнолгон же аны сервер жапкан.',
 };
 
 const tg: Dict = {
@@ -980,6 +987,7 @@ const tg: Dict = {
   'history.cancelled': 'Бекор шуд',
   'history.abandoned': 'Анҷом наёфт',
   'history.place': 'Ҷойи {n} аз {of}',
+  'history.noReplay': 'Ин матч такрор надорад: он пеш аз пайдо шудани таърих бозӣ шудааст ё онро сервер бастааст.',
 };
 
 const hy: Dict = {
@@ -1102,6 +1110,7 @@ const hy: Dict = {
   'history.cancelled': 'Չեղարկված',
   'history.abandoned': 'Չավարտված',
   'history.place': '{n}-րդ տեղ {of}-ից',
+  'history.noReplay': 'Այս խաղը կրկնություն չունի՝ այն խաղացվել է պատմության հայտնվելուց առաջ, կամ այն փակել է սերվերը։',
 };
 
 const az: Dict = {
@@ -1224,6 +1233,7 @@ const az: Dict = {
   'history.cancelled': 'Ləğv edildi',
   'history.abandoned': 'Tamamlanmayıb',
   'history.place': '{of} içində {n}-ci yer',
+  'history.noReplay': 'Bu matçın təkrarı yoxdur: o, tarixçə yaranmazdan əvvəl oynanılıb və ya onu server bağlayıb.',
 };
 
 const ro: Dict = {
@@ -1346,6 +1356,7 @@ const ro: Dict = {
   'history.cancelled': 'Anulat',
   'history.abandoned': 'Neterminat',
   'history.place': 'Locul {n} din {of}',
+  'history.noReplay': 'Acest meci nu are reluare: a fost jucat înainte de apariția istoricului sau l-a închis serverul.',
 };
 
 const tk: Dict = {
@@ -1468,6 +1479,7 @@ const tk: Dict = {
   'history.cancelled': 'Ýatyryldy',
   'history.abandoned': 'Tamamlanmady',
   'history.place': '{of} içinden {n}-nji orun',
+  'history.noReplay': 'Bu matçyň gaýtalamasy ýok: ol taryh peýda bolmazdan öň oýnaldy ýa-da ony serwer ýapdy.',
 };
 
 export const CARDS_STRINGS: Record<LangCode, Dict> = { en: cardsEn, ru, uk, be, kk, uz, ky, tg, hy, az, ro, tk };

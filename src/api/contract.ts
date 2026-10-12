@@ -737,6 +737,8 @@ export interface HistoryPage {
 
 /** A Chart Duel match as the server keeps it: replaying the seed with the actions shows the whole match again. */
 export interface DuelRecord {
+  /** False for matches played before the history kept actions, and for matches closed by the server. */
+  replayable: boolean;
   seed: number;
   stake: number;
   nickname: string;

@@ -208,7 +208,7 @@ Market Kombat: общая игра, валюта — фишки боя `KMB`, к
 | `GET /v1/history/{id}` | — | `{ item, duel?, kombat? }`. Чужое — 404. |
 
 - `HistoryItem = { id, game, startedAt, finishedAt, outcome, place, players, mode, opponent, turns, stake, net }`. `outcome`: `win`, `loss`, `draw`, `cancelled` (бой, к которому никто не пришёл), `abandoned` (матч, закрытый сервером). `net` — итог в ABIE: вернулось минус поставлено.
-- Дуэль: `duel = { seed, stake, nickname, actions, endTick, equity, place, fee, payout }`. Приложение проигрывает матч заново (`replayDuel` в `src/game/duel.ts`): график, таблица и лента «кто что когда» в любой момент матча.
+- Дуэль: `duel = { replayable, seed, stake, nickname, actions, endTick, equity, place, fee, payout }`. `replayable: false` — матч сыгран до того, как сервер стал хранить действия, или закрыт сервером: повтора нет. Иначе приложение проигрывает матч заново (`replayDuel` в `src/game/duel.ts`): график, таблица и лента «кто что когда» в любой момент матча.
 - Бой: `kombat` — полный `KombatView` с `log` всех ходов; приложение показывает ход боя, график здоровья и повтор по шагам.
 
 В приложении: кнопка «История» на карточке каждой игры (история этой игры) и «История игр» в кошельке (все игры, с фильтром).

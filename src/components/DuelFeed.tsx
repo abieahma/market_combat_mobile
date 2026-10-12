@@ -2,13 +2,14 @@
 // exits, liquidations, headlines and the final bell, newest first.
 
 import { StyleSheet, Text, View } from 'react-native';
-import { DUEL_ME, DUEL_BOTS, DuelLogEntry, TICK_MS } from '../game/duel';
+import { DUEL_ME, DUEL_BOTS, DuelLogEntry, MATCH_TICKS, TICK_MS } from '../game/duel';
 import { StringKey } from '../i18n/strings';
 import { useStore } from '../state/store';
 import { useLookStyles } from '../ui/look';
 
-export function matchClock(tick: number): string {
-  const sec = Math.floor((tick * TICK_MS) / 1000);
+/** m:ss of `tick` ticks; `up` rounds up, as the match countdown does. */
+export function matchClock(tick: number, up = false): string {
+  const sec = (up ? Math.ceil : Math.floor)((tick * TICK_MS) / 1000);
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }
 
@@ -25,7 +26,7 @@ export function DuelFeed({
   limit?: number;
   /** Shows an amount of the game currency. */
   show: (units: number) => string;
-  /** One short line per entry, for the match screen. */
+  /** One short line per entry and the time as the match clock shows it (time left), for the match screen. */
   compact?: boolean;
 }) {
   const styles = useLookStyles(baseStyles);
@@ -59,7 +60,7 @@ export function DuelFeed({
         const mine = e.type !== 'news' && e.traderId === DUEL_ME;
         return (
           <View key={`${e.tick}-${i}`} style={[styles.row, mine && { backgroundColor: colors.goldSoft }]}>
-            <Text style={[styles.time, { color: colors.faint }]}>{matchClock(e.tick)}</Text>
+            <Text style={[styles.time, { color: colors.faint }]}>{compact ? matchClock(MATCH_TICKS - e.tick, true) : matchClock(e.tick)}</Text>
             <Text style={[styles.who, { color: colors.text, fontWeight: mine ? '800' : '600' }]} numberOfLines={1}>
               {who}
             </Text>

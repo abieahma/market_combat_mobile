@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { DuelFeed } from '../components/DuelFeed';
 import { PriceChart } from '../components/PriceChart';
 import {
@@ -85,6 +85,9 @@ export function DuelScreen({
   const tp = useType();
   const { colors, t, fmt, profile, haptic, showMoney } = useStore();
   const nickname = profile?.nickname ?? 'You';
+  // The feed takes what a short screen can spare.
+  const { height } = useWindowDimensions();
+  const feedLines = height >= 760 ? 3 : height >= 680 ? 2 : 1;
   const [duel, setDuel] = useState<DuelState>(() => createDuel(seed, duelSlots(nickname), stake));
   const done = useRef(false);
   const actions = useRef<MatchAction[]>([]);
@@ -275,8 +278,8 @@ export function DuelScreen({
         })}
       </View>
 
-      <View style={[styles.feed, { borderColor: colors.line }]}>
-        <DuelFeed log={duel.log} nickname={nickname} limit={3} show={(u) => showMoney(DUEL, u)} compact />
+      <View style={[styles.feed, { minHeight: feedLines * 21 + 2 }]}>
+        <DuelFeed log={duel.log} nickname={nickname} limit={feedLines} show={(u) => showMoney(DUEL, u)} compact />
       </View>
 
       <View style={[styles.positionRow, { borderColor: colors.line }]}>
@@ -394,7 +397,7 @@ const baseStyles = StyleSheet.create({
   toast: { position: 'absolute', bottom: space.md, alignSelf: 'center', paddingHorizontal: space.lg, paddingVertical: space.sm, borderRadius: radius.pill },
   toastText: { fontSize: 15, fontWeight: '800' },
   board: { borderRadius: radius.md, borderWidth: 1, paddingVertical: 4 },
-  feed: { minHeight: 64, justifyContent: 'center', marginTop: -space.xs },
+  feed: { justifyContent: 'center', marginTop: -space.xs },
   boardRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.md, height: 30 },
   place: { width: 14, fontSize: 13, fontWeight: '800' },
   boardName: { flexShrink: 1, fontSize: 14 },

@@ -225,7 +225,7 @@ export function TurnTable({ turn, view, width, pending }: { turn: KombatTurnView
             <Text style={[styles.playName, { color: colors.text }]} numberOfLines={2}>
               {playTitle(side, t)}
             </Text>
-            {side.taken > 0 && <Text style={[styles.taken, { color: colors.down }]}>−{side.taken}</Text>}
+            {side.taken > 0 && <Text style={[styles.taken, { color: colors.down }]}>{`${t('kombat.hp')} −${side.taken}`}</Text>}
             {notes.map((n, k) => (
               <Text key={k} style={[styles.note, { color: toneColor[n.tone] }]} numberOfLines={1}>
                 {n.text}
@@ -445,7 +445,7 @@ const baseStyles = StyleSheet.create({
   noCardText: { fontSize: 11, fontWeight: '700', textAlign: 'center' },
   notes: { alignItems: 'center', gap: 1, alignSelf: 'stretch' },
   playName: { fontSize: 13, fontWeight: '800', textAlign: 'center' },
-  taken: { fontSize: 20, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  taken: { fontSize: 15, fontWeight: '900', fontVariant: ['tabular-nums'] },
   note: { fontSize: 11, fontWeight: '600', textAlign: 'center' },
   log: { gap: space.sm },
   logTurn: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: space.sm, gap: 6 },
@@ -453,7 +453,7 @@ const baseStyles = StyleSheet.create({
   logTurnText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
   logTime: { fontSize: 12, fontVariant: ['tabular-nums'] },
   logRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.sm },
-  logNoCard: { width: 30, height: 22, borderWidth: 1, borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
+  logNoCard: { width: 42, height: 22, borderWidth: 1, borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
   logText: { flex: 1, minWidth: 0 },
   logWho: { fontSize: 13 },
   logNotes: { fontSize: 12, marginTop: 1 },

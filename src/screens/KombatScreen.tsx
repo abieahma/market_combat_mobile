@@ -25,7 +25,7 @@ const KOMBAT = GAMES.find((g) => g.id === 'kombat')!;
 export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onHub: () => void; onAgain: () => void }) {
   const styles = useLookStyles(baseStyles);
   const tp = useType();
-  const { colors, t, tf, fmt, scheme, refresh, notify, haptic, showMoney } = useStore();
+  const { colors, t, tf, fmt, scheme, refresh, notify, haptic, showMoney, look } = useStore();
   const [view, setView] = useState<KombatView | null>(null);
   const [offset, setOffset] = useState(0);
   const [, setTick] = useState(0);
@@ -192,7 +192,7 @@ export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onH
 
       <Glass style={styles.arena}>
         <Fighter f={myFighter} name={nameOf(myFighter)} side={0} hit={hit[me]} lunge={lunge[me]} damage={view.last?.damage[me] ?? 0} crit={view.last?.crit[me] ?? false} turn={view.last?.turn ?? 0} />
-        <Text style={[styles.vs, { color: colors.goldHi }]}>VS</Text>
+        <Text style={[styles.vs, { color: look.brand ? colors.goldText : colors.goldHi }]}>VS</Text>
         {theirFighter && (
           <Fighter f={theirFighter} name={nameOf(theirFighter)} side={1} hit={hit[them]} lunge={lunge[them]} damage={view.last?.damage[them] ?? 0} crit={view.last?.crit[them] ?? false} turn={view.last?.turn ?? 0} />
         )}
@@ -323,7 +323,7 @@ function Fighter({
       <Bar value={f.energy} max={100} color={tint} thin />
       <View style={styles.pips}>
         {[0, 1, 2].map((i) => (
-          <View key={i} style={[styles.pip, { borderColor: colors.gold, backgroundColor: i < f.combo ? colors.gold : 'transparent' }]} />
+          <View key={i} style={[styles.pip, { borderColor: colors.goldText, backgroundColor: i < f.combo ? colors.goldText : 'transparent' }]} />
         ))}
       </View>
     </View>

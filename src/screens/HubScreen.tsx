@@ -233,14 +233,14 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
 /** Two fighters of the universes facing each other, for the Market Kombat window. */
 function KombatVignette({ width, height }: { width: number; height: number }) {
   const styles = useLookStyles(baseStyles);
-  const { colors, profile } = useStore();
+  const { colors, profile, look } = useStore();
   const mine = profile?.character ?? 'waldberik';
   const rival = CHARACTER_IDS[(CHARACTER_IDS.indexOf(mine) + 2) % CHARACTER_IDS.length];
   const size = Math.min(104, height - 16);
   return (
     <View style={[styles.versus, { width, height }]}>
       <Avatar character={mine} gender={profile?.gender ?? 'm'} size={size} />
-      <Text style={[styles.vs, { color: colors.goldHi }]}>VS</Text>
+      <Text style={[styles.vs, { color: look.brand ? colors.goldText : colors.goldHi }]}>VS</Text>
       <Avatar character={rival} gender="m" size={size} />
     </View>
   );
@@ -287,7 +287,7 @@ function ChartVignette({ width, height }: { width: number; height: number }) {
 function GameTile({ game: shown, onPress, starting, playLabel }: { game: ShownGame; onPress: () => void; starting: boolean; playLabel: string }) {
   const styles = useLookStyles(baseStyles);
   const tp = useType();
-  const { colors, t, fmt, showMoney } = useStore();
+  const { colors, t, fmt, showMoney, look } = useStore();
   const [width, setWidth] = useState(0);
   const game = shown.info;
   // Before a character is chosen the games are only on display.
@@ -319,7 +319,7 @@ function GameTile({ game: shown, onPress, starting, playLabel }: { game: ShownGa
               </View>
             )}
             {game.offline && (
-              <View style={[styles.tag, { borderColor: colors.glassEdge }]}>
+              <View style={[styles.tag, { borderColor: look.brand ? colors.line : colors.glassEdge }]}>
                 <Text style={[styles.tagText, { color: colors.muted }]}>{t('hub.vsBots')}</Text>
               </View>
             )}

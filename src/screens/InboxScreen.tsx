@@ -4,6 +4,7 @@ import { InboxMessage, server } from '../mock-server';
 import { useStore } from '../state/store';
 import { TopBar } from '../ui/kit';
 import { radius, space, type } from '../ui/theme';
+import { useLookStyles, useType } from '../ui/look';
 
 function clock(ts: number) {
   const d = new Date(ts);
@@ -12,6 +13,8 @@ function clock(ts: number) {
 
 /** Emails the server "sent". Stands in for the player's real mailbox. */
 export function InboxScreen({ onBack }: { onBack: () => void }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, t, tf } = useStore();
   const [messages, setMessages] = useState<InboxMessage[]>([]);
 
@@ -24,7 +27,7 @@ export function InboxScreen({ onBack }: { onBack: () => void }) {
     <ScrollView contentContainerStyle={styles.content}>
       <TopBar title={t('inbox.title')} onBack={onBack} />
       <Text style={[styles.note, { color: colors.faint }]}>{t('auth.simNote')}</Text>
-      {messages.length === 0 && <Text style={[type.body, { color: colors.muted }]}>{t('inbox.empty')}</Text>}
+      {messages.length === 0 && <Text style={[tp.body, { color: colors.muted }]}>{t('inbox.empty')}</Text>}
       {messages.map((m) => (
         <View key={m.id} style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.line }]}>
           <View style={styles.head}>
@@ -34,8 +37,8 @@ export function InboxScreen({ onBack }: { onBack: () => void }) {
             <Text style={[styles.time, { color: colors.faint }]}>{clock(m.ts)}</Text>
           </View>
           <Text style={[styles.to, { color: colors.muted }]}>{m.to}</Text>
-          <Text style={[type.body, { color: colors.text }]}>{tf('inbox.codeBody', { code: m.code })}</Text>
-          <Text style={[styles.code, { color: colors.gold }]} selectable>
+          <Text style={[tp.body, { color: colors.text }]}>{tf('inbox.codeBody', { code: m.code })}</Text>
+          <Text style={[styles.code, { color: colors.goldText }]} selectable>
             {m.code}
           </Text>
         </View>
@@ -44,7 +47,7 @@ export function InboxScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   content: { padding: space.lg, gap: space.md, paddingBottom: space.xl * 2 },
   note: { fontSize: 12 },
   card: { borderWidth: 1, borderRadius: radius.md, padding: space.lg, gap: space.xs },

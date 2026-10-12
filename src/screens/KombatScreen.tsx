@@ -13,16 +13,19 @@ import { StringKey } from '../i18n/strings';
 import { api, useStore } from '../state/store';
 import { AbieAmount, Button } from '../ui/kit';
 import { Glass, useReducedMotion } from '../ui/luxe';
-import { fonts, radius, space, type } from '../ui/theme';
+import { fonts, radius, space } from '../ui/theme';
 import { characterName, worldColor } from '../world/characters';
+import { useLookStyles, useType } from '../ui/look';
 
 const POLL_MS = 700;
 const native = Platform.OS !== 'web';
 const MOVE_LABEL: Record<KombatMove, StringKey> = { strike: 'kombat.strike', special: 'kombat.strike', block: 'kombat.block', charge: 'kombat.charge' };
-const money = GAMES.find((g) => g.id === 'kombat')!.money;
+const KOMBAT = GAMES.find((g) => g.id === 'kombat')!;
 
 export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onHub: () => void; onAgain: () => void }) {
-  const { colors, t, tf, fmt, scheme, refresh, notify, haptic } = useStore();
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
+  const { colors, t, tf, fmt, scheme, refresh, notify, haptic, showMoney } = useStore();
   const [view, setView] = useState<KombatView | null>(null);
   const [offset, setOffset] = useState(0);
   const [, setTick] = useState(0);
@@ -106,7 +109,7 @@ export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onH
   if (!view) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={colors.gold} />
+        <ActivityIndicator color={colors.goldText} />
       </View>
     );
   }
@@ -151,9 +154,9 @@ export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onH
     return (
       <View style={styles.center}>
         <Glass style={styles.waiting}>
-          <ActivityIndicator color={colors.gold} size="large" />
+          <ActivityIndicator color={colors.goldText} size="large" />
           <Text style={[styles.waitTitle, { color: colors.text }]}>{t('kombat.searching')}</Text>
-          <Text style={[type.body, { color: colors.muted, textAlign: 'center' }]}>{tf('kombat.searchingNote', { stake: money(fmt(view.stake)) })}</Text>
+          <Text style={[tp.body, { color: colors.muted, textAlign: 'center' }]}>{tf('kombat.searchingNote', { stake: showMoney(KOMBAT, view.stake) })}</Text>
           <Button variant="ghost" label={t('kombat.cancel')} onPress={leave} />
         </Glass>
       </View>
@@ -230,18 +233,18 @@ export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onH
       {over && (
         <Glass style={styles.result}>
           {view.status === 'cancelled' ? (
-            <Text style={[type.body, { color: colors.text, textAlign: 'center' }]}>{t('kombat.cancelled')}</Text>
+            <Text style={[tp.body, { color: colors.text, textAlign: 'center' }]}>{t('kombat.cancelled')}</Text>
           ) : (
             <>
               <Text style={[styles.resultTitle, { color: s?.winner === me ? colors.gold : colors.text }]}>
                 {s?.winner === null ? t('kombat.draw') : s?.winner === me ? t('kombat.win') : t('kombat.lose')}
               </Text>
               {view.mode === 'bot' || !s ? (
-                <Text style={[type.body, { color: colors.muted, textAlign: 'center' }]}>{t('kombat.trainingDone')}</Text>
+                <Text style={[tp.body, { color: colors.muted, textAlign: 'center' }]}>{t('kombat.trainingDone')}</Text>
               ) : (
                 <>
                   <View style={styles.payout}>
-                    <Text style={[type.label, { color: colors.gold }]}>{t('result.returned')}</Text>
+                    <Text style={[tp.label, { color: colors.goldText }]}>{t('result.returned')}</Text>
                     <AbieAmount amount={s.payout} size="lg" />
                   </View>
                   <Text style={[styles.net, { color: s.net > 0 ? colors.up : s.net < 0 ? colors.down : colors.muted }]}>
@@ -249,9 +252,9 @@ export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onH
                     {fmt(Math.abs(s.net))} ABIE
                   </Text>
                   <View style={[styles.lines, { borderColor: colors.line }]}>
-                    <Line label={t('result.stake')} value={money(fmt(s.stake))} />
-                    <Line label={t('result.final')} value={money(fmt(s.back + s.fee))} />
-                    {s.fee > 0 && <Line label={t('result.fee')} value={`−${money(fmt(s.fee))}`} />}
+                    <Line label={t('result.stake')} value={showMoney(KOMBAT, s.stake)} />
+                    <Line label={t('result.final')} value={showMoney(KOMBAT, s.back + s.fee)} />
+                    {s.fee > 0 && <Line label={t('result.fee')} value={`−${showMoney(KOMBAT, s.fee)}`} />}
                   </View>
                 </>
               )}
@@ -285,6 +288,7 @@ function Fighter({
   crit: boolean;
   turn: number;
 }) {
+  const styles = useLookStyles(baseStyles);
   const { colors, t, settings, scheme } = useStore();
   const tint = worldColor(f.character, scheme);
   const dir = side === 0 ? 1 : -1;
@@ -327,6 +331,7 @@ function Fighter({
 }
 
 function Bar({ value, max, color, thin }: { value: number; max: number; color: string; thin?: boolean }) {
+  const styles = useLookStyles(baseStyles);
   const { colors } = useStore();
   return (
     <View style={[styles.bar, thin && styles.barThin, { backgroundColor: colors.surfaceAlt }]}>
@@ -350,6 +355,7 @@ function MoveButton({
   onPress: () => void;
   accent?: string;
 }) {
+  const styles = useLookStyles(baseStyles);
   const { colors } = useStore();
   return (
     <Pressable
@@ -378,16 +384,18 @@ function MoveButton({
 }
 
 function Line({ label, value }: { label: string; value: string }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors } = useStore();
   return (
     <View style={styles.line}>
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>{label}</Text>
+      <Text style={[tp.body, { color: colors.muted, flex: 1 }]}>{label}</Text>
       <Text style={[styles.lineValue, { color: colors.text }]}>{value}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.lg },
   content: { padding: space.lg, gap: space.md, paddingBottom: space.xl * 2 },
   waiting: { padding: space.xl, gap: space.md, alignItems: 'center', alignSelf: 'stretch' },

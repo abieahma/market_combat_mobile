@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { AuthProvider, Gender, GENDER_CHANGE_COOLDOWN_MS, NICKNAME_MAX } from '../api/contract';
+import { AuthProvider, Gender, GENDER_CHANGE_COOLDOWN_MS, NICKNAME_MAX, UNIVERSE_RETURN_COST } from '../api/contract';
+import { COUNTRIES } from '../wallet/countries';
 import { isApiError } from '../api/transport';
 import { Avatar, AvatarPlaceholder } from '../components/Avatar';
 import { formatWhen, LANGUAGES, StringKey } from '../i18n/strings';
@@ -9,8 +10,9 @@ import { useStore } from '../state/store';
 import { AbieCoin, CheckIcon } from '../ui/icons';
 import { Button, SectionLabel, TopBar } from '../ui/kit';
 import { Glass } from '../ui/luxe';
-import { fonts, radius, space, ThemeMode, type } from '../ui/theme';
+import { fonts, radius, space, ThemeMode } from '../ui/theme';
 import { characterName, CHARACTERS, worldColor } from '../world/characters';
+import { useLookStyles, useType } from '../ui/look';
 
 const THEMES: ThemeMode[] = ['system', 'dark', 'light'];
 const THEME_LABEL: Record<ThemeMode, StringKey> = { system: 'theme.system', dark: 'theme.dark', light: 'theme.light' };
@@ -38,6 +40,8 @@ export function SettingsScreen({
   /** First, free choice. */
   onChoose: () => void;
 }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const {
     colors,
     t,
@@ -60,7 +64,17 @@ export function SettingsScreen({
     setSparring,
     resetServer,
     notify,
+    fmt,
+    universe,
+    leaveUniverse,
+    grantTest,
   } = useStore();
+  const [leaveArmed, setLeaveArmed] = useState(false);
+  useEffect(() => {
+    if (!leaveArmed) return;
+    const id = setTimeout(() => setLeaveArmed(false), 3000);
+    return () => clearTimeout(id);
+  }, [leaveArmed]);
   const savedNick = profile?.nickname ?? '';
   const [nick, setNick] = useState(savedNick);
   const [nickError, setNickError] = useState<StringKey | null>(null);
@@ -121,7 +135,16 @@ export function SettingsScreen({
                 </Text>
               </View>
             ))}
+            {profile?.country && (
+              <View style={[styles.idRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line }]}>
+                <Text style={[styles.idProvider, { color: colors.muted }]}>{t('country.title')}</Text>
+                <Text style={[styles.rowText, { color: colors.text, flex: 1 }]} numberOfLines={1}>
+                  {COUNTRIES[profile.country.code].flag} {profile.country.code} · {profile.country.currency}
+                </Text>
+              </View>
+            )}
           </View>
+          {profile?.country && <Text style={[styles.hint, { color: colors.faint }]}>{tf('country.note', { currency: profile.country.currency })}</Text>}
           <Button variant="ghost" label={t('account.logout')} onPress={logout} />
           <Text style={[styles.hint, { color: colors.faint }]}>{t('account.logoutNote')}</Text>
         </View>
@@ -144,7 +167,9 @@ export function SettingsScreen({
         <View style={styles.group}>
           <SectionLabel>{t('char.section')}</SectionLabel>
           <Glass style={styles.charCard}>
-            <Avatar character={profile.character} gender={profile.gender ?? 'm'} size={72} />
+            <View style={!universe && styles.away}>
+              <Avatar character={profile.character} gender={profile.gender ?? 'm'} size={72} />
+            </View>
             <View style={styles.charText}>
               <Text style={[styles.charName, { color: worldColor(profile.character, scheme) }]} numberOfLines={1}>
                 {characterName(profile.character, settings.lang)}
@@ -159,7 +184,30 @@ export function SettingsScreen({
           <Text style={[styles.hint, { color: colors.faint }]}>
             {genderLocked ? tf('char.genderNext', { date: formatWhen(genderFreeAt) }) : t('char.appearanceNote')}
           </Text>
-          <Button variant="ghost" label={t('char.change')} onPress={onCharacter} />
+          {universe ? (
+            <>
+              <Button
+                variant={leaveArmed ? 'down' : 'ghost'}
+                label={leaveArmed ? t('char.tapConfirm') : t('uni.leave')}
+                onPress={async () => {
+                  if (!leaveArmed) return setLeaveArmed(true);
+                  setLeaveArmed(false);
+                  try {
+                    await leaveUniverse();
+                  } catch {
+                    notify(t('net.error'));
+                  }
+                }}
+              />
+              <Text style={[styles.hint, { color: colors.faint }]}>{tf('uni.leaveNote', { price: fmt(UNIVERSE_RETURN_COST) })}</Text>
+              <Button variant="ghost" label={t('char.change')} onPress={onCharacter} />
+            </>
+          ) : (
+            <>
+              <Text style={[styles.hint, { color: colors.muted }]}>{t('uni.outside')}</Text>
+              <Button label={tf('uni.backFor', { price: fmt(UNIVERSE_RETURN_COST) })} onPress={onCharacter} />
+            </>
+          )}
         </View>
       )}
 
@@ -182,7 +230,8 @@ export function SettingsScreen({
 
       <View style={styles.group}>
         <SectionLabel>{t('settings.theme')}</SectionLabel>
-        <View style={[styles.segment, { backgroundColor: colors.surface, borderColor: colors.line }]}>
+        {universe && <Text style={[styles.hint, { color: colors.faint }]}>{t('uni.themeNote')}</Text>}
+        <View style={[styles.segment, { backgroundColor: colors.surface, borderColor: colors.line, opacity: universe ? 0.45 : 1 }]} pointerEvents={universe ? 'none' : 'auto'}>
           {THEMES.map((mode) => {
             const active = settings.theme === mode;
             return (
@@ -238,7 +287,7 @@ export function SettingsScreen({
               >
                 <Text style={[styles.rowText, { color: colors.text, flex: 1 }]}>{lang.name}</Text>
                 <Text style={[styles.code, { color: colors.faint }]}>{lang.code.toUpperCase()}</Text>
-                <View style={styles.check}>{active && <CheckIcon color={colors.gold} />}</View>
+                <View style={styles.check}>{active && <CheckIcon color={colors.goldText} />}</View>
               </Pressable>
             );
           })}
@@ -247,10 +296,10 @@ export function SettingsScreen({
 
       <View style={[styles.about, { backgroundColor: colors.goldSoft, borderColor: colors.gold }]}>
         <View style={styles.aboutHead}>
-          <AbieCoin size={28} color={colors.gold} ink={colors.coinInk} />
-          <Text style={[type.title, { color: colors.text }]}>{t('settings.aboutTitle')}</Text>
+          <AbieCoin size={28} color={colors.coin} ink={colors.coinInk} />
+          <Text style={[tp.title, { color: colors.text }]}>{t('settings.aboutTitle')}</Text>
         </View>
-        <Text style={[type.body, { color: colors.text }]}>{t('settings.aboutText')}</Text>
+        <Text style={[tp.body, { color: colors.text }]}>{t('settings.aboutText')}</Text>
       </View>
 
       <View style={styles.group}>
@@ -290,6 +339,14 @@ export function SettingsScreen({
             />
           </View>
         </View>
+        <Button
+          variant="ghost"
+          label={t('dev.grant')}
+          onPress={async () => {
+            await grantTest(1000);
+            notify(t('dev.granted'));
+          }}
+        />
         <Button variant="ghost" label={t('dev.moderation')} onPress={onModeration} />
         <Button variant="ghost" label={t('dev.inbox')} onPress={onInbox} />
         <Button
@@ -310,7 +367,7 @@ export function SettingsScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   content: { padding: space.lg, gap: space.xl, paddingBottom: space.xl * 2 },
   group: { gap: space.sm },
   input: { height: 48, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: space.md, fontSize: 16, fontWeight: '600' },
@@ -334,6 +391,7 @@ const styles = StyleSheet.create({
   about: { borderRadius: radius.lg, borderWidth: 1, padding: space.lg, gap: space.sm },
   aboutHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   hint: { fontSize: 13 },
+  away: { opacity: 0.45 },
   charCard: { flexDirection: 'row', alignItems: 'center', gap: space.lg, padding: space.lg },
   charText: { flex: 1, gap: 2 },
   charName: { fontFamily: fonts.display, fontSize: 26, lineHeight: 30 },

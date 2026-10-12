@@ -8,8 +8,9 @@ import { isApiError } from '../api/transport';
 import { api, requestId, useStore } from '../state/store';
 import { Button } from '../ui/kit';
 import { Glass, LiftPressable } from '../ui/luxe';
-import { fonts, radius, space, type } from '../ui/theme';
+import { fonts, radius, space } from '../ui/theme';
 import { Sheet } from './Sheet';
+import { useLookStyles, useType } from '../ui/look';
 
 export function KombatLobby({
   visible,
@@ -24,6 +25,8 @@ export function KombatLobby({
   onPvp: () => void;
   busy: boolean;
 }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, t, tf, fmt, refresh, notify, haptic } = useStore();
   const [left, setLeft] = useState<number | null>(null);
   const [armed, setArmed] = useState<KombatBoostPackId | null>(null);
@@ -72,23 +75,23 @@ export function KombatLobby({
       <LiftPressable onPress={onTraining} disabled={busy} accessibilityLabel={t('kombat.training')}>
         <Glass style={styles.option}>
           <Text style={[styles.optionTitle, { color: colors.text }]}>{t('kombat.training')}</Text>
-          <Text style={[type.body, { color: colors.muted }]}>{t('kombat.trainingNote')}</Text>
+          <Text style={[tp.body, { color: colors.muted }]}>{t('kombat.trainingNote')}</Text>
         </Glass>
       </LiftPressable>
 
       <LiftPressable onPress={onPvp} disabled={busy} accessibilityLabel={t('kombat.pvp')}>
         <Glass style={[styles.option, { borderColor: colors.gold }]}>
-          <Text style={[styles.optionTitle, { color: colors.gold }]}>{t('kombat.pvp')}</Text>
-          <Text style={[type.body, { color: colors.muted }]}>{t('kombat.pvpNote')}</Text>
+          <Text style={[styles.optionTitle, { color: colors.goldText }]}>{t('kombat.pvp')}</Text>
+          <Text style={[tp.body, { color: colors.muted }]}>{t('kombat.pvpNote')}</Text>
         </Glass>
       </LiftPressable>
 
-      {busy && <ActivityIndicator color={colors.gold} />}
+      {busy && <ActivityIndicator color={colors.goldText} />}
 
       <View style={[styles.boost, { borderColor: colors.line }]}>
         <View style={styles.boostHead}>
           <Text style={[styles.boostTitle, { color: colors.text }]}>{t('kombat.boost')}</Text>
-          {left !== null && <Text style={[styles.boostLeft, { color: colors.gold }]}>{tf('kombat.boostLeft', { n: fmt(left) })}</Text>}
+          {left !== null && <Text style={[styles.boostLeft, { color: colors.goldText }]}>{tf('kombat.boostLeft', { n: fmt(left) })}</Text>}
         </View>
         <Text style={[styles.note, { color: colors.faint }]}>{t('kombat.boostNote')}</Text>
         <View style={styles.packs}>
@@ -108,7 +111,7 @@ export function KombatLobby({
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   title: { fontFamily: fonts.display, fontSize: 32, lineHeight: 36 },
   option: { padding: space.lg, gap: 4, borderRadius: radius.lg },
   optionTitle: { fontFamily: fonts.displaySemi, fontSize: 22 },

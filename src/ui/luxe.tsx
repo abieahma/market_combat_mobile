@@ -4,9 +4,11 @@
 
 import { ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Platform, Pressable, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Defs, LinearGradient, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useStore } from '../state/store';
 import { radius } from './theme';
+import { useLookStyles } from './look';
 
 const native = Platform.OS !== 'web';
 
@@ -31,15 +33,20 @@ export function useReducedMotion(): boolean {
   return reduced;
 }
 
-/** Near-black ground with warm light rising from below that slowly breathes. */
+/**
+ * Ground of every screen. Neutral cabinet: near-black with warm light rising
+ * from below that slowly breathes. Inside a universe: the universe's plain
+ * ground, with its header colour behind the status bar.
+ */
 export function NightBackdrop() {
-  const { colors, scheme } = useStore();
+  const { colors, scheme, look } = useStore();
   const id = svgId('glow', useId());
   const reduced = useReducedMotion();
   const breath = useRef(new Animated.Value(0.75)).current;
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
-    if (reduced) return;
+    if (reduced || look.brand) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(breath, { toValue: 1, duration: 5200, easing: Easing.inOut(Easing.sin), useNativeDriver: native }),
@@ -48,7 +55,15 @@ export function NightBackdrop() {
     );
     loop.start();
     return () => loop.stop();
-  }, [breath, reduced]);
+  }, [breath, reduced, look.brand]);
+
+  if (look.header) {
+    return (
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg }]}>
+        <View style={{ height: insets.top, backgroundColor: look.header.from }} />
+      </View>
+    );
+  }
 
   const strength = scheme === 'dark' ? 0.38 : 0.3;
   return (
@@ -69,12 +84,23 @@ export function NightBackdrop() {
   );
 }
 
-/** Smoked-glass panel with a thin gold edge and light on its top rim. */
+/**
+ * Panel. Neutral cabinet: smoked glass with a thin gold edge and light on its
+ * top rim. Inside a universe: the universe's card, flat or softly lifted.
+ */
 export function Glass({ children, style, quiet }: { children: ReactNode; style?: StyleProp<ViewStyle>; quiet?: boolean }) {
-  const { colors } = useStore();
+  const styles = useLookStyles(baseStyles);
+  const { colors, look } = useStore();
   const id = svgId('sheen', useId());
   const flat = StyleSheet.flatten(style) ?? {};
-  const corner = typeof flat.borderRadius === 'number' ? flat.borderRadius : radius.lg;
+  const corner = typeof flat.borderRadius === 'number' ? (flat.borderRadius === radius.lg ? look.shape.card : flat.borderRadius) : look.shape.card;
+  if (look.brand) {
+    return (
+      <View style={[{ borderRadius: corner }, look.cardShadow && !quiet && styles.cardShadow, flat.flex !== undefined && { flex: flat.flex }]}>
+        <View style={[styles.glass, { backgroundColor: colors.glass, borderColor: colors.glassEdge }, style, { borderRadius: corner }]}>{children}</View>
+      </View>
+    );
+  }
   return (
     // The shadow sits on an outer layer so the inner clipping does not cut it off.
     <View style={[{ borderRadius: corner }, !quiet && styles.glassShadow, flat.flex !== undefined && { flex: flat.flex }]}>
@@ -144,6 +170,7 @@ export function LiftPressable({
 
 /** The ABIE coin in polished gold, with a glint passing over it now and then. */
 export function ShinyCoin({ size }: { size: number }) {
+  const styles = useLookStyles(baseStyles);
   const { colors } = useStore();
   const base = useId();
   const face = svgId('face', base);
@@ -169,14 +196,14 @@ export function ShinyCoin({ size }: { size: number }) {
       <Svg width={size} height={size} viewBox="0 0 100 100">
         <Defs>
           <LinearGradient id={rim} x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor={colors.goldHi} />
-            <Stop offset="0.5" stopColor={colors.gold} />
-            <Stop offset="1" stopColor={colors.goldLo} />
+            <Stop offset="0" stopColor={colors.coinHi} />
+            <Stop offset="0.5" stopColor={colors.coin} />
+            <Stop offset="1" stopColor={colors.coinLo} />
           </LinearGradient>
           <RadialGradient id={face} cx="38" cy="32" r="70" gradientUnits="userSpaceOnUse">
-            <Stop offset="0" stopColor={colors.goldHi} />
-            <Stop offset="0.55" stopColor={colors.gold} />
-            <Stop offset="1" stopColor={colors.goldLo} />
+            <Stop offset="0" stopColor={colors.coinHi} />
+            <Stop offset="0.55" stopColor={colors.coin} />
+            <Stop offset="1" stopColor={colors.coinLo} />
           </RadialGradient>
         </Defs>
         <Circle cx="50" cy="50" r="50" fill={`url(#${rim})`} />
@@ -256,13 +283,20 @@ export function GoldFill({ rounded = radius.md }: { rounded?: number }) {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   glass: { borderWidth: 1, borderRadius: radius.lg, overflow: 'hidden' },
   glassShadow: {
     shadowColor: '#000',
     shadowOpacity: 0.45,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 14 },
+  },
+  cardShadow: {
+    shadowColor: '#2A1840',
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   glint: { position: 'absolute', left: 0, backgroundColor: 'rgba(255, 255, 255, 0.38)' },
 });

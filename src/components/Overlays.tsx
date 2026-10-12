@@ -3,9 +3,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { InboxMessage, server } from '../mock-server';
 import { useStore } from '../state/store';
 import { radius, space, type } from '../ui/theme';
+import { useLookStyles } from '../ui/look';
 
 /** Short message at the bottom of the screen (errors, confirmations). */
 export function Toast() {
+  const styles = useLookStyles(baseStyles);
   const { colors, toast } = useStore();
   if (!toast) return null;
   return (
@@ -17,6 +19,7 @@ export function Toast() {
 
 /** "New email" banner, like a phone notification from the mail app. */
 export function InboxBanner({ onOpen }: { onOpen: () => void }) {
+  const styles = useLookStyles(baseStyles);
   const { colors, t } = useStore();
   const [msg, setMsg] = useState<InboxMessage | null>(null);
 
@@ -41,13 +44,13 @@ export function InboxBanner({ onOpen }: { onOpen: () => void }) {
         {t('inbox.new')} · {msg.to}
       </Text>
       <Text style={[styles.bannerBody, { color: colors.text }]} numberOfLines={1}>
-        {t('inbox.codeSubject')}: <Text style={[styles.code, { color: colors.gold }]}>{msg.code}</Text>
+        {t('inbox.codeSubject')}: <Text style={[styles.code, { color: colors.goldText }]}>{msg.code}</Text>
       </Text>
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   toast: {
     position: 'absolute',
     bottom: space.xl * 1.5,

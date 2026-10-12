@@ -2,9 +2,11 @@ import { ReactNode } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useStore } from '../state/store';
 import { radius, space } from '../ui/theme';
+import { useLookStyles } from '../ui/look';
 
 /** Bottom sheet over the current screen. */
 export function Sheet({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: ReactNode }) {
+  const styles = useLookStyles(baseStyles);
   const { colors } = useStore();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -19,7 +21,7 @@ export function Sheet({ visible, onClose, children }: { visible: boolean; onClos
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   wrap: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {

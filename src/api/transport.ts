@@ -10,6 +10,8 @@ export interface ApiRequest {
   path: string;
   body?: unknown;
   token?: string | null;
+  /** Region of the device (X-Region header): a weak hint for the country of a new cabinet. */
+  region?: string | null;
 }
 
 export interface ApiResponse {

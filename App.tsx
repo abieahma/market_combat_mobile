@@ -59,7 +59,7 @@ export default function App() {
 }
 
 function Root() {
-  const { status, colors, scheme, startMatch, finishMatch, notify, t, games, profile, opened, refresh } = useStore();
+  const { status, colors, look, startMatch, finishMatch, notify, t, games, profile, opened, refresh, showMoney } = useStore();
   const [route, setRoute] = useState<Route>({ name: 'hub' });
   const [loginInbox, setLoginInbox] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -195,7 +195,7 @@ function Root() {
         screen = (
           <HubScreen
             onPlay={openStake}
-            onChoose={() => setRoute({ name: 'choose' })}
+            onChoose={() => setRoute({ name: profile?.character ? 'character' : 'choose' })}
             onPayEntry={payEntry}
             onPropose={() => setRoute({ name: 'proposals' })}
             starting={starting}
@@ -237,7 +237,7 @@ function Root() {
           <ResultScreen
             result={route.result}
             settle={route.settle}
-            money={lastGame?.info.money ?? ((n: string) => `$${n}`)}
+            money={(units) => (lastGame ? showMoney(lastGame.info, units) : String(units))}
             onRetry={() => saveResult(route.result)}
             onAgain={() => lastGame && openStake(lastGame)}
             starting={starting}
@@ -284,7 +284,7 @@ function Root() {
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]}>
-      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      <StatusBar style={look.statusBar} />
       <NightBackdrop />
       {screen}
       <KombatLobby

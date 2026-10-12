@@ -58,7 +58,7 @@ const expectErr = async (p, code) => { try { await p; assert.fail('expected ' + 
     const { items } = await api.games.list();
     const duel = items.find((g) => g.id === 'duel');
     assert.equal(duel.universes, 'all');
-    assert.deepEqual(duel.currency, { code: 'DUSD', rate: { abie: 1, units: 100 }, settle: 'match' });
+    assert.deepEqual(duel.currency, { code: 'LOCAL', rate: { abie: 1, units: 100 }, settle: 'match' });
   });
 
   await t('matches: no character, no game', async () => {

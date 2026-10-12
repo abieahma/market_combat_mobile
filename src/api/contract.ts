@@ -8,6 +8,11 @@
 //
 // Conventions: JSON over HTTPS, `Authorization: Bearer <token>`, amounts in
 // whole ABIE, times in Unix milliseconds, errors as { error: { code, message } }.
+// `X-Region` (the device's region) is a weak hint for the country of a new
+// cabinet when no phone or payment is known yet.
+
+import type { CountryCode, CurrencyCode } from '../wallet/countries';
+export type { AbieQuote, CountryCode, CurrencyCode } from '../wallet/countries';
 
 // ------------------------------------------------------------------ common
 
@@ -26,8 +31,10 @@ export type Gender = 'm' | 'f';
 /** A skin the player owns. The 4 base skins are the free characters. */
 export type SkinId = string;
 export const FREE_SKINS: SkinId[] = [...CHARACTER_IDS];
-/** Changing character keeps ratings, history and ABIE, but costs this much. */
+/** Changing character (moving to another universe) keeps ratings, history and ABIE, but costs this much. */
 export const CHARACTER_CHANGE_COST = 5000;
+/** Leaving one's universe for the neutral cabinet is free; coming back to it costs this much. */
+export const UNIVERSE_RETURN_COST = 50;
 /** Appearance (gender) can be changed for free, once per this period. */
 export const GENDER_CHANGE_COOLDOWN_MS = 7 * 24 * 3600 * 1000;
 export type AuthProvider = 'google' | 'telegram' | 'phone' | 'email';
@@ -42,6 +49,7 @@ export type ErrorCode =
   | 'insufficient_funds'
   | 'rate_limited'
   | 'conflict'
+  | 'identity_conflict'
   | 'payment_required'
   | 'network'
   | 'internal';
@@ -64,10 +72,24 @@ export interface Account {
   identities: Identity[];
 }
 
+/** Country of registration: fixed once, never changed. 1 ABIE = 1 unit of its money. */
+export interface ProfileCountry {
+  code: CountryCode;
+  currency: CurrencyCode;
+  source: 'payment' | 'phone' | 'device';
+  fixedAt: number;
+}
+
 export interface Profile {
   accountId: string;
   nickname: string;
   character: CharacterId | null;
+  /**
+   * False while the player is out in the neutral cabinet: the character and
+   * its status are kept, but no universe is on and no game can be played.
+   */
+  inUniverse: boolean;
+  country: ProfileCountry | null;
   gender: Gender | null;
   genderChangedAt: number | null;
   /** Skins the player owns. */
@@ -121,6 +143,8 @@ export type TelegramStartRequest = Record<string, never>;
 export type ChallengeStatus =
   | { status: 'pending'; expiresAt: number }
   | { status: 'expired' }
+  /** The identifiers of this sign-in belong to different cabinets: one identifier, one cabinet. */
+  | { status: 'refused'; code: 'identity_conflict' }
   | ({ status: 'confirmed' } & AuthResult);
 
 /** POST /v1/auth/google: the server verifies a Google ID token. */
@@ -169,6 +193,17 @@ export interface ChangeCharacterResult {
 }
 
 /**
+ * POST /v1/me/universe/leave: out to the neutral cabinet, free. Response: Profile.
+ * POST /v1/me/universe/return { requestId }: back into one's own universe for
+ * UNIVERSE_RETURN_COST ABIE. Response: ChangeCharacterResult. Moving to
+ * another universe is /v1/me/character/change (CHARACTER_CHANGE_COST); it
+ * works from inside or outside and puts the player into the new universe.
+ */
+export interface UniverseReturnRequest {
+  requestId: string;
+}
+
+/**
  * POST /v1/me/gender: free, once per GENDER_CHANGE_COOLDOWN_MS.
  * Response: Profile. 429 rate_limited before the period is over.
  */
@@ -189,6 +224,9 @@ export interface ChangeGenderRequest {
  *   of it; entry_income: the rest, paid to the game's author
  * - author_share: the author's share of a currency purchase in their game
  * - kombat_boost: a pack of energy boosts for Market Kombat
+ * - universe_return: coming back from the neutral cabinet into one's universe
+ * - deposit: ABIE bought for money (1 ABIE = 1 unit of the country's money)
+ * - test_grant: ABIE given from the developer panel of the stub
  */
 export type TxKind =
   | 'welcome'
@@ -202,7 +240,10 @@ export type TxKind =
   | 'entry_fee'
   | 'entry_income'
   | 'author_share'
-  | 'kombat_boost';
+  | 'kombat_boost'
+  | 'universe_return'
+  | 'deposit'
+  | 'test_grant';
 
 export interface WalletTx {
   /** Unique operation id; posting the same id again changes nothing. */
@@ -220,6 +261,21 @@ export interface WalletTx {
 export interface WalletView {
   currency: 'ABIE';
   balance: number;
+}
+
+/**
+ * POST /v1/abie/quote { abie, payment?, network?, vpn? } → AbieQuote & { home }
+ * Price of ABIE for this player: 1 unit of the money of the country of
+ * registration per ABIE. If the signals disagree (card or phone of another
+ * country, a VPN), the most expensive money of those involved is offered.
+ * On the Go server `payment`, `network` and `vpn` come from the payment
+ * provider and the request itself; the stub takes them from the body.
+ */
+export interface AbieQuoteRequest {
+  abie: number;
+  payment?: CountryCode;
+  network?: CountryCode;
+  vpn?: boolean;
 }
 
 /** GET /v1/wallet/transactions?cursor=&limit= (newest first) */

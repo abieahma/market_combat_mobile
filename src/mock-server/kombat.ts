@@ -138,6 +138,8 @@ export function registerKombatRoutes(s: MockServer) {
       accountId: SPARRING_ACCOUNT,
       nickname: 'Sparring',
       character: 'yandos',
+      inUniverse: true,
+      country: null,
       gender: 'm',
       genderChangedAt: null,
       skins: [...CHARACTER_IDS],

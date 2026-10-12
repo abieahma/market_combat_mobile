@@ -20,8 +20,9 @@ import { api, requestId, useStore } from '../state/store';
 import { CheckIcon } from '../ui/icons';
 import { Button, SectionLabel, TopBar } from '../ui/kit';
 import { Glass, LiftPressable } from '../ui/luxe';
-import { fonts, radius, space, type } from '../ui/theme';
+import { fonts, radius, space } from '../ui/theme';
 import { characterName } from '../world/characters';
+import { useLookStyles, useType } from '../ui/look';
 
 const STATUS_LABEL: Record<ProposalStatus, StringKey> = {
   review: 'prop.status.review',
@@ -31,6 +32,7 @@ const STATUS_LABEL: Record<ProposalStatus, StringKey> = {
 };
 
 export function StatusPill({ status }: { status: ProposalStatus }) {
+  const styles = useLookStyles(baseStyles);
   const { colors, t } = useStore();
   const color = { review: colors.gold, changes_requested: colors.down, approved: colors.up, rejected: colors.faint }[status];
   return (
@@ -43,6 +45,8 @@ export function StatusPill({ status }: { status: ProposalStatus }) {
 // ----------------------------------------------------------------- list
 
 export function ProposalsScreen({ onBack, onNew, onOpen }: { onBack: () => void; onNew: () => void; onOpen: (id: string) => void }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, t } = useStore();
   const [items, setItems] = useState<Proposal[] | null>(null);
 
@@ -56,10 +60,10 @@ export function ProposalsScreen({ onBack, onNew, onOpen }: { onBack: () => void;
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <TopBar title={t('prop.title')} onBack={onBack} />
-      <Text style={[type.body, { color: colors.muted }]}>{t('prop.lead')}</Text>
+      <Text style={[tp.body, { color: colors.muted }]}>{t('prop.lead')}</Text>
       <Button label={t('prop.new')} onPress={onNew} big />
-      {items === null && <ActivityIndicator color={colors.gold} />}
-      {items?.length === 0 && <Text style={[type.body, { color: colors.faint, textAlign: 'center' }]}>{t('prop.empty')}</Text>}
+      {items === null && <ActivityIndicator color={colors.goldText} />}
+      {items?.length === 0 && <Text style={[tp.body, { color: colors.faint, textAlign: 'center' }]}>{t('prop.empty')}</Text>}
       {items?.map((p) => (
         <LiftPressable key={p.id} onPress={() => onOpen(p.id)} accessibilityLabel={p.title}>
           <Glass style={styles.card}>
@@ -85,6 +89,8 @@ const EMPTY: ProposalDraft = { title: '', description: '', universes: 'all', cur
 const whole = (text: string) => (/^\d+$/.test(text.trim()) ? Number(text.trim()) : NaN);
 
 export function ProposalFormScreen({ proposal, onBack, onDone }: { proposal?: Proposal; onBack: () => void; onDone: (p: Proposal) => void }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, t, settings, notify, haptic } = useStore();
   const start = proposal ?? EMPTY;
   const [title, setTitle] = useState(start.title);
@@ -186,9 +192,9 @@ export function ProposalFormScreen({ proposal, onBack, onDone }: { proposal?: Pr
             <Text style={[styles.small, { color: colors.muted }]}>{t('prop.rate')}</Text>
             <View style={styles.rateRow}>
               <TextInput value={rateAbie} onChangeText={setRateAbie} keyboardType="number-pad" style={[input, styles.rateInput]} />
-              <Text style={[styles.rateSign, { color: colors.gold }]}>ABIE =</Text>
+              <Text style={[styles.rateSign, { color: colors.goldText }]}>ABIE =</Text>
               <TextInput value={rateUnits} onChangeText={setRateUnits} keyboardType="number-pad" style={[input, styles.rateInput]} />
-              <Text style={[styles.rateSign, { color: colors.gold }]}>{code.trim().toUpperCase() || '…'}</Text>
+              <Text style={[styles.rateSign, { color: colors.goldText }]}>{code.trim().toUpperCase() || '…'}</Text>
             </View>
             <Text style={[styles.small, { color: colors.faint }]}>{t('prop.rateHint')}</Text>
             <Text style={[styles.small, { color: colors.muted }]}>{t('prop.share')}</Text>
@@ -211,11 +217,11 @@ export function ProposalFormScreen({ proposal, onBack, onDone }: { proposal?: Pr
       {!proposal && (
         <Glass quiet style={styles.offer}>
           <Text style={[styles.offerTitle, { color: colors.text }]}>{offer?.title ?? t('prop.offer')}</Text>
-          {offer === null && <ActivityIndicator color={colors.gold} />}
+          {offer === null && <ActivityIndicator color={colors.goldText} />}
           {offer && (
             <>
               <Pressable accessibilityRole="button" onPress={() => setShowOffer((v) => !v)}>
-                <Text style={[styles.link, { color: colors.gold }]}>{showOffer ? t('prop.offerHide') : t('prop.offerShow')}</Text>
+                <Text style={[styles.link, { color: colors.goldText }]}>{showOffer ? t('prop.offerHide') : t('prop.offerShow')}</Text>
               </Pressable>
               {showOffer && offer.paragraphs.map((p, i) => <Text key={i} style={[styles.offerText, { color: colors.muted }]}>{p}</Text>)}
               <Pressable
@@ -230,7 +236,7 @@ export function ProposalFormScreen({ proposal, onBack, onDone }: { proposal?: Pr
                 <View style={[styles.box, { borderColor: colors.gold, backgroundColor: accepted ? colors.gold : 'transparent' }]}>
                   {accepted && <CheckIcon size={14} color={colors.goldInk} />}
                 </View>
-                <Text style={[type.body, { color: colors.text, flex: 1 }]}>{t('prop.offerAccept')}</Text>
+                <Text style={[tp.body, { color: colors.text, flex: 1 }]}>{t('prop.offerAccept')}</Text>
               </Pressable>
             </>
           )}
@@ -246,6 +252,8 @@ export function ProposalFormScreen({ proposal, onBack, onDone }: { proposal?: Pr
 // --------------------------------------------------------------- detail
 
 export function ProposalScreen({ id, onBack, onEdit }: { id: string; onBack: () => void; onEdit: (p: Proposal) => void }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, t, tf, fmt, settings, notify } = useStore();
   const [p, setP] = useState<Proposal | null>(null);
   const [text, setText] = useState('');
@@ -275,7 +283,7 @@ export function ProposalScreen({ id, onBack, onEdit }: { id: string; onBack: () 
   if (!p) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={colors.gold} />
+        <ActivityIndicator color={colors.goldText} />
       </View>
     );
   }
@@ -286,9 +294,9 @@ export function ProposalScreen({ id, onBack, onEdit }: { id: string; onBack: () 
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       <TopBar title={p.title} onBack={onBack} />
       <StatusPill status={p.status} />
-      {p.status === 'approved' && <Text style={[type.body, { color: colors.up }]}>{t('prop.approvedNote')}</Text>}
+      {p.status === 'approved' && <Text style={[tp.body, { color: colors.up }]}>{t('prop.approvedNote')}</Text>}
       <Glass quiet style={styles.summary}>
-        <Text style={[type.body, { color: colors.text }]}>{p.description}</Text>
+        <Text style={[tp.body, { color: colors.text }]}>{p.description}</Text>
         <Row label={t('prop.universes')} value={universes} />
         <Row
           label={t('prop.currency')}
@@ -311,7 +319,7 @@ export function ProposalScreen({ id, onBack, onEdit }: { id: string; onBack: () 
           <Text style={[styles.small, { color: colors.faint }]}>
             {m.from === 'author' ? t('prop.you') : t('prop.moderator')} · {formatWhen(m.ts)}
           </Text>
-          <Text style={[type.body, { color: colors.text }]}>{m.text}</Text>
+          <Text style={[tp.body, { color: colors.text }]}>{m.text}</Text>
         </View>
       ))}
       {p.status !== 'approved' && p.status !== 'rejected' && (
@@ -335,6 +343,7 @@ export function ProposalScreen({ id, onBack, onEdit }: { id: string; onBack: () 
 // ------------------------------------------------------------- pieces
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  const styles = useLookStyles(baseStyles);
   const { colors } = useStore();
   return (
     <View style={styles.field}>
@@ -346,6 +355,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const styles = useLookStyles(baseStyles);
   const { colors } = useStore();
   return (
     <Pressable
@@ -360,6 +370,7 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
 }
 
 function Segment({ options, value, onChange }: { options: string[]; value: number; onChange: (i: number) => void }) {
+  const styles = useLookStyles(baseStyles);
   const { colors, haptic } = useStore();
   return (
     <View style={[styles.segment, { backgroundColor: colors.surface, borderColor: colors.line }]}>
@@ -384,6 +395,7 @@ function Segment({ options, value, onChange }: { options: string[]; value: numbe
 }
 
 function Row({ label, value }: { label: string; value: string }) {
+  const styles = useLookStyles(baseStyles);
   const { colors } = useStore();
   return (
     <View style={styles.row}>
@@ -393,7 +405,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { padding: space.lg, gap: space.lg, paddingBottom: space.xl * 2 },
   card: { padding: space.lg, gap: 6 },

@@ -10,11 +10,14 @@ import { server } from '../mock-server';
 import { useStore } from '../state/store';
 import { Button, TopBar } from '../ui/kit';
 import { Glass } from '../ui/luxe';
-import { fonts, radius, space, type } from '../ui/theme';
+import { fonts, radius, space } from '../ui/theme';
 import { characterName } from '../world/characters';
 import { StatusPill } from './ProposalsScreen';
+import { useLookStyles, useType } from '../ui/look';
 
 export function ModerationScreen({ onBack }: { onBack: () => void }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, t, tf, fmt, settings, refresh, notify } = useStore();
   const [items, setItems] = useState<Proposal[] | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -41,9 +44,9 @@ export function ModerationScreen({ onBack }: { onBack: () => void }) {
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       <TopBar title={t('dev.moderation')} onBack={onBack} />
-      <Text style={[type.body, { color: colors.muted }]}>{t('dev.moderationNote')}</Text>
-      {items === null && <ActivityIndicator color={colors.gold} />}
-      {items?.length === 0 && <Text style={[type.body, { color: colors.faint }]}>{t('dev.noProposals')}</Text>}
+      <Text style={[tp.body, { color: colors.muted }]}>{t('dev.moderationNote')}</Text>
+      {items === null && <ActivityIndicator color={colors.goldText} />}
+      {items?.length === 0 && <Text style={[tp.body, { color: colors.faint }]}>{t('dev.noProposals')}</Text>}
       {items?.map((p) => {
         const open = p.status === 'review' || p.status === 'changes_requested';
         const universes = p.universes === 'all' ? t('prop.all') : p.universes.map((u) => characterName(u, settings.lang)).join(', ');
@@ -56,7 +59,7 @@ export function ModerationScreen({ onBack }: { onBack: () => void }) {
               <StatusPill status={p.status} />
             </View>
             <Text style={[styles.small, { color: colors.faint }]}>{formatWhen(p.updatedAt)}</Text>
-            <Text style={[type.body, { color: colors.text }]}>{p.description}</Text>
+            <Text style={[tp.body, { color: colors.text }]}>{p.description}</Text>
             <Text style={[styles.small, { color: colors.muted }]}>
               {universes} ·{' '}
               {p.currency ? `${p.currency.code}: ${fmt(p.currency.rate.abie)} ABIE = ${fmt(p.currency.rate.units)} · ${p.currency.authorShare}%` : t('prop.noCurrency')} ·{' '}
@@ -91,7 +94,7 @@ export function ModerationScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   content: { padding: space.lg, gap: space.lg, paddingBottom: space.xl * 2 },
   card: { padding: space.lg, gap: space.sm },
   head: { flexDirection: 'row', alignItems: 'center', gap: space.sm },

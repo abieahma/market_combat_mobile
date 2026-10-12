@@ -6,13 +6,14 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ShownGame } from '../games';
 import { useStore } from '../state/store';
 import { Button } from '../ui/kit';
-import { fonts, radius, space, type } from '../ui/theme';
+import { fonts, radius, space } from '../ui/theme';
 import { Sheet } from './Sheet';
+import { useLookStyles, useType } from '../ui/look';
 
 /** "1 ABIE = $100" for a game's rate. */
-export function rateText(game: ShownGame, fmt: (v: number) => string): string {
+export function rateText(game: ShownGame, fmt: (v: number) => string, show: (units: number) => string): string {
   const rate = game.entry?.currency?.rate;
-  return rate ? `${fmt(rate.abie)} ABIE = ${game.info.money(fmt(rate.units))}` : '';
+  return rate ? `${fmt(rate.abie)} ABIE = ${show(rate.units)}` : '';
 }
 
 export function StakeSheet({
@@ -27,7 +28,9 @@ export function StakeSheet({
   onConfirm: (lots: number) => void;
   busy: boolean;
 }) {
-  const { colors, t, tf, fmt, balance, haptic } = useStore();
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
+  const { colors, t, tf, fmt, balance, haptic, showMoney } = useStore();
   const rate = game?.entry?.currency?.rate ?? null;
   const stakes = game?.info.stakes ?? [];
   const affordable = rate ? stakes.filter((lots) => lots * rate.abie <= balance) : [];
@@ -46,11 +49,11 @@ export function StakeSheet({
   return (
     <Sheet visible={!!game} onClose={onClose}>
       <Text style={[styles.title, { color: colors.text }]}>{t('stake.title')}</Text>
-      <Text style={[type.body, { color: colors.muted }]}>{t(game.info.stakeText)}</Text>
+      <Text style={[tp.body, { color: colors.muted }]}>{t(game.info.stakeText)}</Text>
 
       <View style={[styles.rateRow, { borderColor: colors.line }]}>
         <Text style={[styles.rateLabel, { color: colors.muted }]}>{t('stake.rate')}</Text>
-        <Text style={[styles.rateValue, { color: colors.gold }]}>{rateText(game, fmt)}</Text>
+        <Text style={[styles.rateValue, { color: colors.goldText }]}>{rateText(game, fmt, (u) => showMoney(game.info, u))}</Text>
       </View>
 
       <View style={styles.chips}>
@@ -76,8 +79,8 @@ export function StakeSheet({
                 ]}
               >
                 <Text style={[styles.chipAbie, { color: colors.text }]}>{fmt(abie)}</Text>
-                <Text style={[styles.chipTicker, { color: colors.gold }]}>ABIE</Text>
-                <Text style={[styles.chipUnits, { color: colors.muted }]}>{game.info.money(fmt(l * rate.units))}</Text>
+                <Text style={[styles.chipTicker, { color: colors.goldText }]}>ABIE</Text>
+                <Text style={[styles.chipUnits, { color: colors.muted }]}>{showMoney(game.info, l * rate.units)}</Text>
               </Pressable>
             );
           })}
@@ -92,7 +95,7 @@ export function StakeSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   title: { fontFamily: fonts.display, fontSize: 30, lineHeight: 34 },
   rateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderBottomWidth: 1, paddingVertical: space.sm },
   rateLabel: { fontSize: 13 },

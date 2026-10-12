@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Stop } from 'react-native-svg';
 import { Colors, radius, type } from '../ui/theme';
+import { useLookStyles } from '../ui/look';
 
 interface Props {
   prices: number[];
@@ -24,6 +25,7 @@ function safeId(raw: string) {
 }
 
 export function PriceChart({ prices, startIndex, totalPoints, entry, entryLabel, formatPrice, colors, height }: Props) {
+  const styles = useLookStyles(baseStyles);
   const [width, setWidth] = useState(0);
   const gradientId = safeId(useId());
   const onLayout = (e: LayoutChangeEvent) => setWidth(Math.round(e.nativeEvent.layout.width));
@@ -119,7 +121,7 @@ export function Sparkline({ prices, width, height, color }: { prices: number[]; 
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   priceTag: {
     position: 'absolute',
     minWidth: LABEL_GUTTER - 8,

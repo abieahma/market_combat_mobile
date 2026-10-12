@@ -11,6 +11,7 @@ import { addSimGoogle, setSimPhone, SimGoogle, simDevice } from '../sim/outside'
 import { Button, SectionLabel } from '../ui/kit';
 import { ShinyCoin } from '../ui/luxe';
 import { fonts, radius, space, type } from '../ui/theme';
+import { useLookStyles, useType } from '../ui/look';
 
 type Step = { kind: 'menu' } | { kind: 'email' } | { kind: 'code'; email: string; challengeId: string };
 type BotFlow = { kind: 'telegram' | 'phone'; challenge: ChallengeStarted };
@@ -28,12 +29,16 @@ function errorKey(e: unknown): StringKey {
       return 'auth.wrongCode';
     case 'challenge_expired':
       return 'auth.expired';
+    case 'identity_conflict':
+      return 'auth.identityConflict';
     default:
       return 'net.error';
   }
 }
 
 export function LoginScreen({ onInbox }: { onInbox: () => void }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, t, tf, settings, completeSignIn, haptic, scheme } = useStore();
   const [step, setStep] = useState<Step>({ kind: 'menu' });
   const [busy, setBusy] = useState<string | null>(null);
@@ -78,11 +83,13 @@ export function LoginScreen({ onInbox }: { onInbox: () => void }) {
           clearInterval(id);
           haptic('success');
           completeSignIn(st);
-        } else if (st.status === 'expired') {
+        } else if (st.status === 'expired' || st.status === 'refused') {
           clearInterval(id);
           setBot(null);
           setBotSheet(false);
-          setError('auth.expired');
+          // One identifier, one cabinet: these identifiers already belong to different cabinets.
+          setError(st.status === 'refused' ? 'auth.identityConflict' : 'auth.expired');
+          if (st.status === 'refused') haptic('error');
         }
       } catch {
         // Network hiccup: try again on the next tick.
@@ -139,7 +146,7 @@ export function LoginScreen({ onInbox }: { onInbox: () => void }) {
       <View style={styles.brand}>
         <ShinyCoin size={84} />
         <Text style={[styles.wordmark, { color: scheme === 'dark' ? colors.goldHi : colors.gold }]}>Market Combat</Text>
-        <Text style={[type.body, styles.welcome, { color: colors.muted }]}>{t('auth.welcome')}</Text>
+        <Text style={[tp.body, styles.welcome, { color: colors.muted }]}>{t('auth.welcome')}</Text>
       </View>
 
       {step.kind === 'menu' && (
@@ -172,7 +179,7 @@ export function LoginScreen({ onInbox }: { onInbox: () => void }) {
 
       {step.kind === 'code' && (
         <View style={styles.form}>
-          <Text style={[type.body, { color: colors.text }]}>{tf('auth.codeSentTo', { email: step.email })}</Text>
+          <Text style={[tp.body, { color: colors.text }]}>{tf('auth.codeSentTo', { email: step.email })}</Text>
           <SectionLabel>{t('auth.codeLabel')}</SectionLabel>
           <TextInput
             value={code}
@@ -205,7 +212,7 @@ export function LoginScreen({ onInbox }: { onInbox: () => void }) {
       {bot && !botSheet && (
         <View style={[styles.waiting, { borderColor: colors.line, backgroundColor: colors.surface }]}>
           <ActivityIndicator color={colors.muted} />
-          <Text style={[type.body, { color: colors.text, flex: 1 }]}>{t('auth.waiting')}</Text>
+          <Text style={[tp.body, { color: colors.text, flex: 1 }]}>{t('auth.waiting')}</Text>
           <Pressable onPress={() => setBotSheet(true)} hitSlop={8}>
             <Text style={[styles.link, { color: TELEGRAM_BLUE }]}>Telegram</Text>
           </Pressable>
@@ -215,7 +222,7 @@ export function LoginScreen({ onInbox }: { onInbox: () => void }) {
         </View>
       )}
 
-      {busy && <ActivityIndicator color={colors.gold} />}
+      {busy && <ActivityIndicator color={colors.goldText} />}
       {error && <Text style={[styles.error, { color: colors.down }]}>{t(error)}</Text>}
 
       <View style={styles.footer}>
@@ -234,6 +241,8 @@ export function LoginScreen({ onInbox }: { onInbox: () => void }) {
 
 /** Stand-in for the Telegram app showing our bot. */
 function TelegramSheet({ flow, onClose }: { flow: BotFlow | null; onClose: () => void }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, t, haptic } = useStore();
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<StringKey | null>(null);
@@ -279,7 +288,7 @@ function TelegramSheet({ flow, onClose }: { flow: BotFlow | null; onClose: () =>
         </View>
       </View>
       <View style={[styles.bubble, { backgroundColor: colors.surfaceAlt }]}>
-        <Text style={[type.body, { color: colors.text }]}>{flow?.kind === 'phone' ? t('tg.sharePrompt') : t('tg.botHello')}</Text>
+        <Text style={[tp.body, { color: colors.text }]}>{flow?.kind === 'phone' ? t('tg.sharePrompt') : t('tg.botHello')}</Text>
       </View>
       {flow?.kind === 'phone' && (
         <>
@@ -308,6 +317,8 @@ function TelegramSheet({ flow, onClose }: { flow: BotFlow | null; onClose: () =>
 
 /** Stand-in for the Google account chooser. */
 function GoogleSheet({ visible, onClose, onPick }: { visible: boolean; onClose: () => void; onPick: (g: SimGoogle) => void }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, t } = useStore();
   const [accounts, setAccounts] = useState<SimGoogle[]>([]);
   const [adding, setAdding] = useState(false);
@@ -332,7 +343,7 @@ function GoogleSheet({ visible, onClose, onPick }: { visible: boolean; onClose: 
 
   return (
     <Sheet visible={visible} onClose={onClose}>
-      <Text style={[type.title, { color: colors.text }]}>{t('auth.chooseGoogle')}</Text>
+      <Text style={[tp.title, { color: colors.text }]}>{t('auth.chooseGoogle')}</Text>
       {accounts.map((g) => (
         <Pressable
           key={g.sub}
@@ -375,7 +386,7 @@ function GoogleSheet({ visible, onClose, onPick }: { visible: boolean; onClose: 
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   content: { flexGrow: 1, padding: space.lg, gap: space.lg },
   topRow: { flexDirection: 'row', justifyContent: 'flex-end' },
   langPill: { height: 34, paddingHorizontal: space.md, borderRadius: radius.pill, borderWidth: 1, justifyContent: 'center' },

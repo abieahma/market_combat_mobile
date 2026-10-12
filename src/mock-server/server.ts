@@ -14,6 +14,7 @@ import {
   NICKNAME_MAX,
   NICKNAME_MIN,
   ENTRY_FEE_PERCENT,
+  UNIVERSE_RETURN_COST,
   PLATFORM_ACCOUNT,
   PLATFORM_FEE_PERCENT,
 } from '../api/contract';
@@ -41,10 +42,11 @@ import type {
 } from '../api/contract';
 import type { ApiRequest, ApiResponse } from '../api/transport';
 import { MATCH_SECONDS } from '../game/duel';
+import { countryOfPhone, isCountry, quoteAbie, registrationCountry } from '../wallet/countries';
 import { emptyLedger, LedgerState, post, WELCOME_BONUS } from '../wallet/ledger';
 import { Database, KeyValue } from './db';
 import { fail, randomId, ServerError } from './errors';
-import { gameEntryProblem, normalizeGame, PUBLISHED_GAMES } from './games';
+import { gameEntryProblem, normalizeGame, PLATFORM_REVISIONS, PUBLISHED_GAMES } from './games';
 import { registerKombatRoutes } from './kombat';
 import { moderate, registerProposalRoutes } from './proposals';
 import { WalletError, WalletService } from './wallet-service';
@@ -69,7 +71,9 @@ interface ChallengeRow {
   id: string;
   kind: 'email' | 'telegram' | 'phone';
   expiresAt: number;
-  status: 'pending' | 'confirmed' | 'consumed';
+  status: 'pending' | 'confirmed' | 'consumed' | 'refused';
+  /** Region of the device that started the sign-in. */
+  region?: string | null;
   email?: string;
   code?: string;
   attempts?: number;
@@ -169,9 +173,14 @@ export class MockServer {
 
   private async openAll() {
     await Promise.all([this.db.open(), this.devDb.open(), this.wallet.open()]);
-    // Games are published once; an entry already in the registry is never replaced.
-    const registry = this.db.table<GameEntry>('games');
-    for (const g of PUBLISHED_GAMES) if (!registry.get(g.id)) registry.put(g.id, g);
+    // Games are published once; an entry already in the registry is never replaced,
+    // except the platform's own games of an older stub revision (see PLATFORM_REVISIONS).
+    const registry = this.db.table<GameEntry & { revision?: number }>('games');
+    for (const g of PUBLISHED_GAMES) {
+      const have = registry.get(g.id);
+      const revision = PLATFORM_REVISIONS[g.id] ?? 1;
+      if (!have || (have.author == null && (have.revision ?? 1) < revision)) registry.put(g.id, { ...g, revision });
+    }
   }
 
   async handle(req: ApiRequest): Promise<ApiResponse> {
@@ -219,7 +228,10 @@ export class MockServer {
     if (!p) return fail(404, 'not_found', 'No profile');
     // Profiles saved before skins existed own the free ones; old character ids read as the new ones.
     const skins = Array.isArray(p.skins) ? p.skins.map((s) => currentCharacterId(s) ?? s) : [...FREE_SKINS];
-    return { ...p, character: currentCharacterId(p.character), skins };
+    const character = currentCharacterId(p.character);
+    // Profiles saved before the neutral cabinet existed are inside their universe.
+    const inUniverse = typeof p.inUniverse === 'boolean' ? p.inUniverse && !!character : !!character;
+    return { ...p, character, skins, inUniverse, country: p.country ?? null };
   }
 
   saveProfile(p: Profile): Profile {
@@ -259,6 +271,7 @@ export class MockServer {
   playable(accountId: string, game: GameEntry): Profile {
     const p = this.profile(accountId);
     if (!p.character) return fail(409, 'conflict', 'Choose a character first');
+    if (!p.inUniverse) return fail(409, 'conflict', 'Come back into your universe first');
     if (game.universes !== 'all' && !game.universes.includes(p.character)) return fail(403, 'forbidden', 'This game is not in your universe');
     if (!this.opened(accountId, game)) return fail(402, 'payment_required', 'Pay the entry of this game first');
     return p;
@@ -352,30 +365,50 @@ export class MockServer {
     }
   }
 
-  /** Finds the account behind an identity or creates a new one. */
-  private signIn(identity: Identity): AuthResult {
+  /**
+   * Finds the cabinet behind the identifiers of a sign-in, or creates one.
+   * One identifier belongs to one cabinet: if the identifiers of this sign-in
+   * (say, a phone number and the Telegram account that shared it) already
+   * belong to two different cabinets, the sign-in is refused. Identifiers seen
+   * for the first time are attached to the cabinet.
+   */
+  private signIn(identities: Identity[], region: string | null | undefined): AuthResult {
     const index = this.db.table<string>('identities');
-    const key = `${identity.provider}:${identity.subject}`;
-    let accountId = index.get(key);
+    const keyOf = (i: Identity) => `${i.provider}:${i.subject}`;
+    const owners = [...new Set(identities.map((i) => index.get(keyOf(i))).filter((x): x is string => !!x))];
+    if (owners.length > 1) {
+      return fail(409, 'identity_conflict', 'These identifiers already belong to another cabinet; register a new cabinet with other ones');
+    }
+    let accountId = owners[0];
     let isNew = false;
     const now = this.now();
     if (!accountId) {
       isNew = true;
       accountId = randomId('acc');
-      this.db.table<AccountRow>('accounts').put(accountId, { id: accountId, createdAt: now, identities: [identity] });
+      this.db.table<AccountRow>('accounts').put(accountId, { id: accountId, createdAt: now, identities: [...identities] });
+      // The country of the cabinet is fixed now and never changes.
+      const phone = identities.find((i) => i.provider === 'phone');
+      const country = registrationCountry({ phone: phone ? countryOfPhone(phone.subject) : null, device: isCountry(region) ? region : null }, now);
       this.db.table<Profile>('profiles').put(accountId, {
         accountId,
         nickname: `Trader${Math.floor(1000 + Math.random() * 9000)}`,
         character: null,
+        inUniverse: false,
+        country,
         gender: null,
         genderChangedAt: null,
         skins: [...FREE_SKINS],
         stats: { matches: 0, wins: 0, earned: 0 },
         respect: { points: 0, level: 0 },
       });
-      index.put(key, accountId);
       this.wallet.post(accountId, { id: `welcome:${accountId}`, kind: 'welcome', amount: WELCOME_BONUS }, now);
+    } else {
+      const account = this.account(accountId);
+      const known = new Set(account.identities.map(keyOf));
+      const added = identities.filter((i) => !known.has(keyOf(i)));
+      if (added.length) this.db.table<AccountRow>('accounts').put(accountId, { ...account, identities: [...account.identities, ...added] });
     }
+    for (const i of identities) index.put(keyOf(i), accountId);
     const token = randomId('tok', 32);
     const expiresAt = now + SESSION_TTL_MS;
     this.db.table<SessionRow>('sessions').put(token, { accountId, expiresAt });
@@ -387,11 +420,11 @@ export class MockServer {
     return c ?? fail(404, 'not_found', 'Unknown sign-in attempt');
   }
 
-  private startBotChallenge(kind: 'telegram' | 'phone'): ChallengeStarted {
+  private startBotChallenge(kind: 'telegram' | 'phone', region: string | null | undefined): ChallengeStarted {
     const id = randomId('ch');
     const nonce = randomId('n', 20).slice(2);
     const expiresAt = this.now() + BOT_CHALLENGE_TTL_MS;
-    this.db.table<ChallengeRow>('challenges').put(id, { id, kind, expiresAt, status: 'pending', nonce });
+    this.db.table<ChallengeRow>('challenges').put(id, { id, kind, expiresAt, status: 'pending', nonce, region: region ?? null });
     const start = `${kind === 'phone' ? 'phone' : 'login'}_${nonce}`;
     return { challengeId: id, expiresAt, botUrl: `https://t.me/${TELEGRAM_BOT}?start=${start}` };
   }
@@ -428,12 +461,12 @@ export class MockServer {
         return fail(400, 'invalid_code', 'Wrong code');
       }
       this.db.table<ChallengeRow>('challenges').put(c.id, { ...c, status: 'consumed' });
-      return this.signIn({ provider: 'email', subject: c.email!, display: c.email! });
+      return this.signIn([{ provider: 'email', subject: c.email!, display: c.email! }], req.region);
     });
 
     // Telegram and phone: the app opens the bot; the bot reports back.
-    this.route('POST', '/v1/auth/telegram/start', () => this.startBotChallenge('telegram'));
-    this.route('POST', '/v1/auth/phone/start', () => this.startBotChallenge('phone'));
+    this.route('POST', '/v1/auth/telegram/start', ({ req }) => this.startBotChallenge('telegram', req.region));
+    this.route('POST', '/v1/auth/phone/start', ({ req }) => this.startBotChallenge('phone', req.region));
 
     this.route('GET', '/v1/auth/challenges/{id}', ({ params }): ChallengeStatus => {
       const c = this.challenge(params[0]);
@@ -441,6 +474,7 @@ export class MockServer {
         this.db.table<ChallengeRow>('challenges').put(c.id, { ...c, status: 'consumed' });
         return { status: 'confirmed', ...c.result };
       }
+      if (c.status === 'refused') return { status: 'refused', code: 'identity_conflict' };
       if (c.status === 'consumed' || c.expiresAt < this.now()) return { status: 'expired' };
       return { status: 'pending', expiresAt: c.expiresAt };
     });
@@ -450,7 +484,7 @@ export class MockServer {
       const token = (req.body as { idToken?: unknown })?.idToken;
       const claims = typeof token === 'string' ? parseMockGoogleToken(token) : null;
       if (!claims) return fail(401, 'unauthorized', 'Google could not confirm this account');
-      return this.signIn({ provider: 'google', subject: claims.sub, display: claims.email });
+      return this.signIn([{ provider: 'google', subject: claims.sub, display: claims.email }], req.region);
     });
 
     this.route('POST', '/v1/auth/logout', ({ req }) => {
@@ -462,7 +496,31 @@ export class MockServer {
     this.route('GET', '/v1/me', ({ req }) => {
       const id = this.accountIdFor(req);
       this.settleStale(id);
-      return { account: this.account(id), profile: this.profile(id) };
+      let p = this.profile(id);
+      // Cabinets made before countries existed get theirs once, from the device.
+      if (!p.country) {
+        const country = registrationCountry({ device: isCountry(req.region) ? req.region : null }, this.now());
+        if (country) p = this.saveProfile({ ...p, country });
+      }
+      return { account: this.account(id), profile: p };
+    });
+
+    // Price of ABIE: 1 unit of the home money per ABIE; the most expensive money if the signals disagree.
+    this.route('POST', '/v1/abie/quote', ({ req }) => {
+      const id = this.accountIdFor(req);
+      const body = (req.body ?? {}) as { abie?: unknown; payment?: unknown; network?: unknown; vpn?: unknown };
+      const abie = body.abie;
+      if (typeof abie !== 'number' || !Number.isInteger(abie) || abie < 1 || abie > 1_000_000) return fail(400, 'invalid_input', 'abie must be a whole number from 1');
+      const p = this.profile(id);
+      if (!p.country) return fail(409, 'conflict', 'The country of the cabinet is not known yet');
+      const phone = this.account(id).identities.find((i) => i.provider === 'phone');
+      const quote = quoteAbie(p.country.code, abie, {
+        phone: phone ? countryOfPhone(phone.subject) : null,
+        payment: isCountry(body.payment) ? body.payment : null,
+        network: isCountry(body.network) ? body.network : null,
+        vpn: body.vpn === true,
+      });
+      return { ...quote, home: p.country.code };
     });
 
     this.route('PATCH', '/v1/me/profile', ({ req }) => {
@@ -486,9 +544,31 @@ export class MockServer {
       const body = (req.body ?? {}) as { character?: unknown; gender?: unknown };
       if (!isCharacter(body.character) || !isGender(body.gender)) return fail(400, 'invalid_input', 'Unknown character or gender');
       const p = this.profile(id);
-      if (p.character) return fail(409, 'conflict', 'Character already chosen; change it instead');
+      if (p.character) return fail(409, 'conflict', 'Character already chosen; change it or come back to it instead');
       if (!p.skins.includes(body.character)) return fail(403, 'forbidden', 'Skin not owned');
-      return this.saveProfile({ ...p, character: body.character, gender: body.gender, genderChangedAt: null });
+      return this.saveProfile({ ...p, character: body.character, gender: body.gender, genderChangedAt: null, inUniverse: true });
+    });
+
+    // Out to the neutral cabinet: free; the character and its status stay.
+    this.route('POST', '/v1/me/universe/leave', ({ req }) => {
+      const id = this.accountIdFor(req);
+      const p = this.profile(id);
+      if (!p.character) return fail(409, 'conflict', 'There is no universe to leave');
+      return p.inUniverse ? this.saveProfile({ ...p, inUniverse: false }) : p;
+    });
+
+    // Back into one's own universe: UNIVERSE_RETURN_COST ABIE, once per requestId.
+    this.route('POST', '/v1/me/universe/return', ({ req }) => {
+      const id = this.accountIdFor(req);
+      const requestId = (req.body as { requestId?: unknown })?.requestId;
+      if (typeof requestId !== 'string' || !requestId) return fail(400, 'invalid_input', 'requestId is required');
+      const p = this.profile(id);
+      if (!p.character) return fail(409, 'conflict', 'Choose a character first');
+      const txId = `universe:${id}:${requestId}`;
+      const repeated = this.wallet.has(id, txId);
+      if (p.inUniverse && !repeated) return fail(409, 'conflict', 'Already in the universe');
+      const tx = this.wallet.post(id, { id: txId, kind: 'universe_return', amount: -UNIVERSE_RETURN_COST, ref: p.character }, this.now());
+      return { profile: p.inUniverse ? p : this.saveProfile({ ...p, inUniverse: true }), tx };
     });
 
     this.route('POST', '/v1/me/character/change', ({ req }) => {
@@ -505,7 +585,8 @@ export class MockServer {
       if (!repeated && body.character === p.character) return fail(400, 'invalid_input', 'This is already your character');
       // The wallet refuses to go below zero; the same requestId never charges twice.
       const tx = this.wallet.post(id, { id: txId, kind: 'character_change', amount: -CHARACTER_CHANGE_COST, ref: body.character }, this.now());
-      const profile = repeated ? p : this.saveProfile({ ...p, character: body.character });
+      // A new universe: the character changes, the player's ratings and history stay.
+      const profile = repeated ? p : this.saveProfile({ ...p, character: body.character, inUniverse: true });
       return { profile, tx };
     });
 
@@ -680,21 +761,32 @@ export class MockServer {
       const table = this.db.table<ChallengeRow>('challenges');
       const c = table.values().find((x) => x.nonce === nonce);
       if (!c || c.status !== 'pending' || c.expiresAt < this.now()) throw new ServerError(410, 'challenge_expired', 'Sign-in link expired');
-      let identity: Identity;
+      // The bot always knows the Telegram account; in the phone flow also the shared number.
+      const identities: Identity[] = [{ provider: 'telegram', subject: String(user.id), display: `@${user.username}` }];
       if (c.kind === 'phone') {
         const phone = normalizePhone(user.phone);
         if (!phone) throw new ServerError(400, 'invalid_input', 'Invalid phone number');
-        identity = { provider: 'phone', subject: phone, display: maskPhone(phone) };
-      } else {
-        identity = { provider: 'telegram', subject: String(user.id), display: `@${user.username}` };
+        identities.unshift({ provider: 'phone', subject: phone, display: maskPhone(phone) });
       }
-      table.put(c.id, { ...c, status: 'confirmed', result: this.signIn(identity) });
+      try {
+        table.put(c.id, { ...c, status: 'confirmed', result: this.signIn(identities, c.region) });
+      } catch (e) {
+        if (!(e instanceof ServerError && e.code === 'identity_conflict')) throw e;
+        table.put(c.id, { ...c, status: 'refused' });
+      }
       await this.db.flush();
     },
     /** Erases everything the server stores, including wallets. */
     reset: async () => {
       await this.openAll();
       await Promise.all([this.db.wipe(), this.devDb.wipe(), this.wallet.wipe()]);
+    },
+    /** Test ABIE from the developer panel (there are no real payments yet). */
+    grant: async (accountId: string, amount: number) => {
+      await this.openAll();
+      const tx = this.wallet.post(accountId, { id: randomId('grant'), kind: 'test_grant', amount }, this.now());
+      await this.wallet.flush();
+      return tx;
     },
     walletAudit: async () => {
       await this.openAll();

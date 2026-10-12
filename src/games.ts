@@ -2,7 +2,8 @@
 // they belong to and their currencies come from the server's game registry
 // (GET /v1/games); this file only adds titles, art and stake choices.
 
-import type { CharacterId, GameEntry } from './api/contract';
+import type { CharacterId, CountryCode, GameEntry } from './api/contract';
+import { formatMoney } from './wallet/countries';
 import { MATCH_SECONDS } from './game/duel';
 import { StringKey } from './i18n/strings';
 
@@ -17,12 +18,18 @@ export interface GameInfo {
   seconds: number | null;
   /** Shown while the game is played against bots only. */
   offline: boolean;
-  /** An amount of the game currency as shown, from an already formatted number: $1,000 or 100 KMB. */
-  money: (formatted: string) => string;
+  /** An amount of the game currency as shown: 12,50 ₽ or 100 KMB. */
+  money: (units: number, ctx: MoneyContext) => string;
   /** Stakes offered before a match, in lots of the game's rate. */
   stakes: number[];
   /** What the stake sheet explains about the stake. */
   stakeText: StringKey;
+}
+
+export interface MoneyContext {
+  fmt: (value: number, decimals?: number) => string;
+  /** Country of the player's cabinet: games in the player's own money show it in that money. */
+  country: CountryCode;
 }
 
 export const GAMES: GameInfo[] = [
@@ -33,7 +40,8 @@ export const GAMES: GameInfo[] = [
     players: 4,
     seconds: MATCH_SECONDS,
     offline: true,
-    money: (n) => `$${n}`,
+    // The player's own money, counted in hundredths: 1250 → 12,50 ₽.
+    money: (units, { fmt, country }) => formatMoney(fmt(units / 100, units % 100 === 0 ? 0 : 2), country),
     stakes: [5, 10, 25, 50, 100],
     stakeText: 'stake.text',
   },
@@ -44,7 +52,7 @@ export const GAMES: GameInfo[] = [
     players: 2,
     seconds: null,
     offline: false,
-    money: (n) => `${n} KMB`,
+    money: (units, { fmt }) => `${fmt(units)} KMB`,
     stakes: [5, 10, 25, 50],
     stakeText: 'kombat.stakeText',
   },

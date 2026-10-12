@@ -5,7 +5,8 @@ import { formatWhen as when, StringKey } from '../i18n/strings';
 import { api, useStore } from '../state/store';
 import { AbieCoin } from '../ui/icons';
 import { Button, SectionLabel, TopBar } from '../ui/kit';
-import { radius, space, type } from '../ui/theme';
+import { radius, space } from '../ui/theme';
+import { useLookStyles, useType } from '../ui/look';
 
 const KIND_LABEL: Record<TxKind, StringKey> = {
   welcome: 'tx.welcome',
@@ -20,9 +21,14 @@ const KIND_LABEL: Record<TxKind, StringKey> = {
   entry_income: 'tx.entry_income',
   author_share: 'tx.author_share',
   kombat_boost: 'tx.kombat_boost',
+  universe_return: 'tx.universe_return',
+  deposit: 'tx.deposit',
+  test_grant: 'tx.test_grant',
 };
 
 export function WalletScreen({ onBack }: { onBack: () => void }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, t, tf, fmt, balance, refresh } = useStore();
   const [items, setItems] = useState<WalletTx[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -53,11 +59,11 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
       <TopBar title={t('wallet.title')} onBack={onBack} />
 
       <View style={[styles.hero, { backgroundColor: colors.goldSoft, borderColor: colors.gold }]}>
-        <Text style={[type.label, { color: colors.gold }]}>{t('wallet.balance')}</Text>
+        <Text style={[tp.label, { color: colors.goldText }]}>{t('wallet.balance')}</Text>
         <View style={styles.amountRow}>
-          <AbieCoin size={36} color={colors.gold} ink={colors.coinInk} />
-          <Text style={[styles.amount, type.num, { color: colors.text }]}>{fmt(balance)}</Text>
-          <Text style={[styles.ticker, { color: colors.gold }]}>ABIE</Text>
+          <AbieCoin size={36} color={colors.coin} ink={colors.coinInk} />
+          <Text style={[styles.amount, tp.num, { color: colors.text }]}>{fmt(balance)}</Text>
+          <Text style={[styles.ticker, { color: colors.goldText }]}>ABIE</Text>
         </View>
       </View>
 
@@ -70,11 +76,11 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
               <Text style={[styles.kind, { color: colors.text }]} numberOfLines={1}>
                 {t(KIND_LABEL[tx.kind])}
               </Text>
-              <Text style={[styles.meta, type.num, { color: colors.faint }]} numberOfLines={1}>
+              <Text style={[styles.meta, tp.num, { color: colors.faint }]} numberOfLines={1}>
                 {when(tx.ts)} · {tf('wallet.after', { amount: fmt(tx.balanceAfter) })}
               </Text>
             </View>
-            <Text style={[styles.delta, type.num, { color: tx.amount >= 0 ? colors.up : colors.down }]}>
+            <Text style={[styles.delta, tp.num, { color: tx.amount >= 0 ? colors.up : colors.down }]}>
               {tx.amount > 0 ? '+' : ''}
               {fmt(tx.amount)}
             </Text>
@@ -82,10 +88,10 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
         ))}
       </View>
 
-      {loading && <ActivityIndicator color={colors.gold} />}
+      {loading && <ActivityIndicator color={colors.goldText} />}
       {failed && (
         <View style={styles.failRow}>
-          <Text style={[type.body, { color: colors.down, flex: 1 }]}>{t('net.error')}</Text>
+          <Text style={[tp.body, { color: colors.down, flex: 1 }]}>{t('net.error')}</Text>
           <Button variant="ghost" label={t('net.retry')} onPress={() => load(items.length ? cursor : null)} />
         </View>
       )}
@@ -94,7 +100,7 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   content: { padding: space.lg, gap: space.lg, paddingBottom: space.xl * 2 },
   hero: { borderWidth: 1, borderRadius: radius.lg, padding: space.lg, gap: space.sm },
   amountRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },

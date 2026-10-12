@@ -3,7 +3,8 @@ import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-n
 import { useStore } from '../state/store';
 import { AbieCoin, ChevronLeft } from './icons';
 import { GoldFill } from './luxe';
-import { fonts, radius, space, type } from './theme';
+import { fonts, radius, space } from './theme';
+import { useLookStyles, useType } from './look';
 
 type Variant = 'gold' | 'up' | 'down' | 'ghost' | 'surface' | 'glass';
 
@@ -24,7 +25,8 @@ export function Button({
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
-  const { colors, haptic } = useStore();
+  const styles = useLookStyles(baseStyles);
+  const { colors, haptic, look } = useStore();
   const bg = {
     gold: 'transparent',
     up: colors.up,
@@ -54,12 +56,13 @@ export function Button({
         styles.button,
         big && styles.buttonBig,
         { backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.85 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] },
-        (variant === 'ghost' || variant === 'glass') && { borderWidth: 1, borderColor: colors.glassEdge },
-        variant === 'gold' && styles.goldShadow,
+        { borderRadius: big ? look.shape.buttonBig : look.shape.button },
+        (variant === 'ghost' || variant === 'glass') && { borderWidth: 1, borderColor: look.brand ? colors.line : colors.glassEdge },
+        variant === 'gold' && (look.brand ? (look.cardShadow ? [styles.goldShadow, { shadowColor: colors.gold, shadowOpacity: 0.22 }] : null) : styles.goldShadow),
         style,
       ]}
     >
-      {variant === 'gold' && <GoldFill rounded={big ? radius.lg : radius.md} />}
+      {variant === 'gold' && <GoldFill rounded={big ? look.shape.buttonBig : look.shape.button} />}
       {icon}
       <Text style={[styles.buttonText, big && styles.buttonTextBig, { color: fg }]} numberOfLines={1}>
         {label}
@@ -69,12 +72,14 @@ export function Button({
 }
 
 export function AbieAmount({ amount, size = 'md', signed }: { amount: number; size?: 'sm' | 'md' | 'lg'; signed?: boolean }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, fmt } = useStore();
   const px = { sm: 14, md: 16, lg: 26 }[size];
   return (
     <View style={styles.amount}>
-      <AbieCoin size={px + 2} color={colors.gold} ink={colors.coinInk} />
-      <Text style={[{ fontSize: px, fontWeight: '800', color: colors.text }, type.num]}>
+      <AbieCoin size={px + 2} color={colors.coin} ink={colors.coinInk} />
+      <Text style={[{ fontSize: px, fontWeight: '800', color: colors.text }, tp.num]}>
         {signed && amount > 0 ? '+' : ''}
         {fmt(amount)}
       </Text>
@@ -83,6 +88,7 @@ export function AbieAmount({ amount, size = 'md', signed }: { amount: number; si
 }
 
 export function BalancePill({ onPress }: { onPress?: () => void }) {
+  const styles = useLookStyles(baseStyles);
   const { colors, balance, t, haptic } = useStore();
   return (
     <Pressable
@@ -96,12 +102,14 @@ export function BalancePill({ onPress }: { onPress?: () => void }) {
       style={({ pressed }) => [styles.pill, { backgroundColor: colors.goldSoft, borderColor: colors.gold, opacity: pressed ? 0.75 : 1 }]}
     >
       <AbieAmount amount={balance} size="sm" />
-      <Text style={[styles.pillTicker, { color: colors.gold }]}>ABIE</Text>
+      <Text style={[styles.pillTicker, { color: colors.goldText }]}>ABIE</Text>
     </Pressable>
   );
 }
 
 export function TopBar({ title, onBack, right }: { title?: string; onBack?: () => void; right?: ReactNode }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, t, haptic } = useStore();
   return (
     <View style={styles.topBar}>
@@ -120,7 +128,7 @@ export function TopBar({ title, onBack, right }: { title?: string; onBack?: () =
         </Pressable>
       ) : null}
       {title ? (
-        <Text style={[type.title, { color: colors.text, flex: 1 }]} numberOfLines={1}>
+        <Text style={[tp.title, { color: colors.text, flex: 1 }]} numberOfLines={1}>
           {title}
         </Text>
       ) : (
@@ -132,11 +140,12 @@ export function TopBar({ title, onBack, right }: { title?: string; onBack?: () =
 }
 
 export function SectionLabel({ children }: { children: string }) {
+  const tp = useType();
   const { colors } = useStore();
-  return <Text style={[type.label, { color: colors.muted }]}>{children}</Text>;
+  return <Text style={[tp.label, { color: colors.muted }]}>{children}</Text>;
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   button: {
     minHeight: 48,
     paddingHorizontal: space.lg,

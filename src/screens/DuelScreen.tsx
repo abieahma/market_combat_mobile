@@ -21,11 +21,13 @@ import {
   unrealizedPnl,
 } from '../game/duel';
 import type { MatchAction } from '../api/contract';
+import { GAMES } from '../games';
 import { StringKey } from '../i18n/strings';
 import { useStore } from '../state/store';
 import { ArrowDown, ArrowUp } from '../ui/icons';
 import { Button } from '../ui/kit';
-import { radius, space, type } from '../ui/theme';
+import { radius, space } from '../ui/theme';
+import { useLookStyles, useType } from '../ui/look';
 
 export interface DuelResult {
   matchId: string;
@@ -39,6 +41,7 @@ export interface DuelResult {
 }
 
 const ME = 'me';
+const DUEL = GAMES.find((g) => g.id === 'duel')!;
 const BOTS = [
   { id: 'b1', name: 'BullRush', style: 'momentum' as const },
   { id: 'b2', name: 'Contra', style: 'contrarian' as const },
@@ -77,7 +80,9 @@ export function DuelScreen({
   /** Called at the bell, or right away when the player leaves (the match is settled at that moment). */
   onFinish: (r: DuelResult) => void;
 }) {
-  const { colors, t, fmt, profile, haptic } = useStore();
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
+  const { colors, t, fmt, profile, haptic, showMoney } = useStore();
   const [duel, setDuel] = useState<DuelState>(() =>
     createDuel(seed, [{ id: ME, name: profile?.nickname ?? 'You', isBot: false }, ...BOTS.map((b) => ({ ...b, isBot: true }))], stake),
   );
@@ -196,7 +201,7 @@ export function DuelScreen({
           </Text>
         </Pressable>
         <View style={[styles.timer, { backgroundColor: colors.surface, borderColor: secondsLeft(duel) <= 10 && live ? down : colors.line }]}>
-          <Text style={[styles.timerText, type.num, { color: secondsLeft(duel) <= 10 && live ? down : colors.text }]}>
+          <Text style={[styles.timerText, tp.num, { color: secondsLeft(duel) <= 10 && live ? down : colors.text }]}>
             {clock(countdown > 0 ? Math.round((MATCH_TICKS * TICK_MS) / 1000) : secondsLeft(duel))}
           </Text>
         </View>
@@ -210,8 +215,8 @@ export function DuelScreen({
           </Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Text style={[styles.price, type.num, { color: colors.text }]}>{fmt(price, 2)}</Text>
-          <Text style={[styles.change, type.num, { color: signColor(change) }]}>{pct(change)}</Text>
+          <Text style={[styles.price, tp.num, { color: colors.text }]}>{fmt(price, 2)}</Text>
+          <Text style={[styles.change, tp.num, { color: signColor(change) }]}>{pct(change)}</Text>
         </View>
       </View>
 
@@ -238,7 +243,7 @@ export function DuelScreen({
         )}
         {countdown > 0 && (
           <View style={styles.overlay} pointerEvents="none">
-            <Text style={[styles.countdown, { color: colors.gold }]}>{countdown}</Text>
+            <Text style={[styles.countdown, { color: colors.goldText }]}>{countdown}</Text>
           </View>
         )}
         {toast && (
@@ -253,7 +258,7 @@ export function DuelScreen({
           const isMe = s.trader.id === ME;
           return (
             <View key={s.trader.id} style={[styles.boardRow, isMe && { backgroundColor: colors.goldSoft }]}>
-              <Text style={[styles.place, type.num, { color: s.place === 1 ? colors.gold : colors.muted }]}>{s.place}</Text>
+              <Text style={[styles.place, tp.num, { color: s.place === 1 ? colors.gold : colors.muted }]}>{s.place}</Text>
               <Text style={[styles.boardName, { color: colors.text, fontWeight: isMe ? '800' : '600' }]} numberOfLines={1}>
                 {isMe ? `${s.trader.name} · ${t('duel.you')}` : s.trader.name}
               </Text>
@@ -263,8 +268,8 @@ export function DuelScreen({
               {s.trader.position && (
                 <View style={[styles.sideDot, { backgroundColor: s.trader.position.side === 1 ? up : down }]} />
               )}
-              <Text style={[styles.equity, type.num, { color: colors.text }]}>{fmt(s.equity)}</Text>
-              <Text style={[styles.boardChange, type.num, { color: signColor(s.change) }]}>{pct(s.change)}</Text>
+              <Text style={[styles.equity, tp.num, { color: colors.text }]}>{showMoney(DUEL, s.equity)}</Text>
+              <Text style={[styles.boardChange, tp.num, { color: signColor(s.change) }]}>{pct(s.change)}</Text>
             </View>
           );
         })}
@@ -276,13 +281,14 @@ export function DuelScreen({
             <Text style={[styles.positionText, { color: me.position.side === 1 ? up : down }]} numberOfLines={1}>
               {t(me.position.side === 1 ? 'duel.long' : 'duel.short')} x{me.position.leverage}
             </Text>
-            <Text style={[styles.positionMeta, type.num, { color: colors.muted }]} numberOfLines={1}>
+            <Text style={[styles.positionMeta, tp.num, { color: colors.muted }]} numberOfLines={1}>
               {t('duel.entry')} {fmt(me.position.entry, 2)}
             </Text>
             <View style={{ flex: 1 }} />
-            <Text style={[styles.pnl, type.num, { color: signColor(pnl) }]}>
+            <Text style={[styles.pnl, tp.num, { color: signColor(pnl) }]}>
               {pnl > 0 ? '+' : ''}
-              {fmt(pnl)}
+              {pnl > 0 ? '+' : pnl < 0 ? '−' : ''}
+              {showMoney(DUEL, Math.abs(pnl))}
             </Text>
           </>
         ) : (
@@ -321,7 +327,7 @@ export function DuelScreen({
         <Button
           big
           variant={pnl >= 0 ? 'up' : 'down'}
-          label={`${t('duel.close')} ${pnl > 0 ? '+' : ''}${fmt(pnl)}`}
+          label={`${t('duel.close')} ${pnl > 0 ? '+' : pnl < 0 ? '−' : ''}${showMoney(DUEL, Math.abs(pnl))}`}
           onPress={close}
           disabled={!canTrade}
         />
@@ -351,7 +357,7 @@ export function DuelScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   screen: { flex: 1, padding: space.lg, gap: space.md },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md },
   leave: { height: 36, paddingHorizontal: space.md, borderRadius: radius.pill, borderWidth: 1, justifyContent: 'center', flexShrink: 1 },

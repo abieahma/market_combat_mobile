@@ -5,8 +5,10 @@ import { CheckIcon } from '../ui/icons';
 import { SectionLabel } from '../ui/kit';
 import { space } from '../ui/theme';
 import { Sheet } from './Sheet';
+import { useLookStyles } from '../ui/look';
 
 export function LanguageSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const styles = useLookStyles(baseStyles);
   const { colors, t, settings, setLang, haptic } = useStore();
   return (
     <Sheet visible={visible} onClose={onClose}>
@@ -31,7 +33,7 @@ export function LanguageSheet({ visible, onClose }: { visible: boolean; onClose:
               ]}
             >
               <Text style={[styles.name, { color: colors.text }]}>{lang.name}</Text>
-              <View style={styles.check}>{active && <CheckIcon color={colors.gold} />}</View>
+              <View style={styles.check}>{active && <CheckIcon color={colors.goldText} />}</View>
             </Pressable>
           );
         })}
@@ -40,7 +42,7 @@ export function LanguageSheet({ visible, onClose }: { visible: boolean; onClose:
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', minHeight: 48, paddingHorizontal: space.sm },
   name: { flex: 1, fontSize: 16, fontWeight: '600' },
   check: { width: 24, alignItems: 'center' },

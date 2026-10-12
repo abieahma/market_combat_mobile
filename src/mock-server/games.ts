@@ -6,12 +6,27 @@
 
 import { CHARACTER_IDS, GameEntry } from '../api/contract';
 
+/**
+ * Code of the currency of a game that trades in the player's own money:
+ * 1 ABIE = 1 unit of the money of the country of registration, counted in
+ * hundredths (kopecks, tiyns, cents) so trading results are not rounded away.
+ */
+export const LOCAL_MONEY = 'LOCAL';
+
+/**
+ * Before the Go server goes live, the platform's own games in the stub may be
+ * re-published with a higher revision (their terms were still being set).
+ * Games of authors are never touched; on the Go server nothing is.
+ */
+export const PLATFORM_REVISIONS: Record<string, number> = { duel: 2, kombat: 1 };
+
 export const PUBLISHED_GAMES: GameEntry[] = [
   {
     id: 'duel',
     universes: 'all',
-    // Chart Duel dollars: 1 ABIE buys $100; a $10,000 stake costs 100 ABIE.
-    currency: { code: 'DUSD', rate: { abie: 1, units: 100 }, settle: 'match' },
+    // Trading in the player's own money: 1 ABIE = 1 ₽ in Russia, 1 ₸ in Kazakhstan, $1 in the USA.
+    // Units are hundredths (kopecks, tiyns, cents), so 1 ABIE = 100 units.
+    currency: { code: LOCAL_MONEY, rate: { abie: 1, units: 100 }, settle: 'match' },
     entry: { kind: 'free' },
     author: null,
     authorShare: 0,

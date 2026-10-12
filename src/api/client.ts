@@ -1,12 +1,15 @@
 // Typed API client. Screens call these methods and never see the transport.
 
 import type {
+  AbieQuote,
+  AbieQuoteRequest,
   ApiErrorBody,
   AuthResult,
   ChangeCharacterResult,
   CharacterId,
   ChallengeStarted,
   ChallengeStatus,
+  CountryCode,
   CurrencyBuyResult,
   EntryResult,
   ErrorCode,
@@ -37,6 +40,8 @@ import { ApiError, ApiRequest, Method, Transport } from './transport';
 
 export interface ApiClient {
   setToken(token: string | null): void;
+  /** Region of the device, sent with every request as a weak hint for the country of a new cabinet. */
+  setRegion(region: string | null): void;
   auth: {
     emailStart(email: string): Promise<ChallengeStarted>;
     emailVerify(challengeId: string, code: string): Promise<AuthResult>;
@@ -52,10 +57,16 @@ export interface ApiClient {
     chooseCharacter(character: CharacterId, gender: Gender): Promise<Profile>;
     changeCharacter(character: CharacterId, requestId: string): Promise<ChangeCharacterResult>;
     changeGender(gender: Gender): Promise<Profile>;
+    /** Out to the neutral cabinet, free. */
+    leaveUniverse(): Promise<Profile>;
+    /** Back into one's universe for UNIVERSE_RETURN_COST ABIE. */
+    returnUniverse(requestId: string): Promise<ChangeCharacterResult>;
   };
   wallet: {
     get(): Promise<WalletView>;
     transactions(cursor?: string | null, limit?: number): Promise<TxPage>;
+    /** Price of ABIE in the money of the cabinet's country. */
+    quote(req: AbieQuoteRequest): Promise<AbieQuote & { home: CountryCode }>;
   };
   games: {
     list(): Promise<GameList>;
@@ -88,9 +99,10 @@ export interface ApiClient {
 
 export function createApi(transport: Transport): ApiClient {
   let token: string | null = null;
+  let region: string | null = null;
 
   async function call<T>(method: Method, path: string, body?: unknown): Promise<T> {
-    const req: ApiRequest = { method, path, body, token };
+    const req: ApiRequest = { method, path, body, token, region };
     const res = await transport.send(req);
     if (res.status >= 200 && res.status < 300) return res.body as T;
     const err = (res.body as ApiErrorBody | null)?.error;
@@ -100,6 +112,9 @@ export function createApi(transport: Transport): ApiClient {
   return {
     setToken(next) {
       token = next;
+    },
+    setRegion(next) {
+      region = next;
     },
     auth: {
       emailStart: (email) => call('POST', '/v1/auth/email/start', { email }),
@@ -118,6 +133,8 @@ export function createApi(transport: Transport): ApiClient {
       chooseCharacter: (character, gender) => call('POST', '/v1/me/character', { character, gender }),
       changeCharacter: (character, requestId) => call('POST', '/v1/me/character/change', { character, requestId }),
       changeGender: (gender) => call('POST', '/v1/me/gender', { gender }),
+      leaveUniverse: () => call('POST', '/v1/me/universe/leave'),
+      returnUniverse: (requestId) => call('POST', '/v1/me/universe/return', { requestId }),
     },
     wallet: {
       get: () => call('GET', '/v1/wallet'),
@@ -127,6 +144,7 @@ export function createApi(transport: Transport): ApiClient {
         if (cursor) q += `&cursor=${encodeURIComponent(cursor)}`;
         return call('GET', `/v1/wallet/transactions?${q}`);
       },
+      quote: (req) => call('POST', '/v1/abie/quote', req),
     },
     games: {
       list: () => call('GET', '/v1/games'),

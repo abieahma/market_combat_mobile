@@ -2,8 +2,9 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import type { MatchFinished } from '../api/contract';
 import { useStore } from '../state/store';
 import { AbieAmount, Button } from '../ui/kit';
-import { fonts, radius, space, type } from '../ui/theme';
+import { fonts, radius, space } from '../ui/theme';
 import { DuelResult } from './DuelScreen';
+import { useLookStyles, useType } from '../ui/look';
 
 /** The server's settlement of the match: what went back to ABIE. */
 export type SettleState = { state: 'saving' } | { state: 'done'; res: MatchFinished } | { state: 'error' };
@@ -19,29 +20,31 @@ export function ResultScreen({
 }: {
   result: DuelResult;
   settle: SettleState;
-  /** Shows an amount of the game currency: $1,000. */
-  money: (formatted: string) => string;
+  /** Shows an amount of the game currency: 12,50 ₽. */
+  money: (units: number) => string;
   onRetry: () => void;
   onAgain: () => void;
   onHub: () => void;
   starting: boolean;
 }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors, t, fmt } = useStore();
   const won = result.myPlace === 1;
-  const money = (v: number, signed = false) => `${signed && v > 0 ? '+' : v < 0 ? '−' : ''}${show(fmt(Math.abs(v)))}`;
+  const money = (v: number, signed = false) => `${signed && v > 0 ? '+' : v < 0 ? '−' : ''}${show(Math.abs(v))}`;
   const res = settle.state === 'done' ? settle.res : null;
   const pnl = result.equity - result.stake;
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.hero}>
-        <Text style={[type.label, { color: colors.muted }]}>{t('result.place')}</Text>
-        <Text style={[styles.place, type.num, { color: won ? colors.gold : colors.text }]}>#{result.myPlace}</Text>
-        <Text style={[type.display, { color: colors.text }]}>{won ? t('result.victory') : t('result.over')}</Text>
+        <Text style={[tp.label, { color: colors.muted }]}>{t('result.place')}</Text>
+        <Text style={[styles.place, tp.num, { color: won ? colors.gold : colors.text }]}>#{result.myPlace}</Text>
+        <Text style={[tp.display, { color: colors.text }]}>{won ? t('result.victory') : t('result.over')}</Text>
       </View>
 
       <View style={[styles.settle, { backgroundColor: colors.goldSoft, borderColor: colors.gold }]}>
-        <Text style={[type.label, { color: colors.gold }]}>{t('result.returned')}</Text>
+        <Text style={[tp.label, { color: colors.goldText }]}>{t('result.returned')}</Text>
         {res && (
           <>
             <AbieAmount amount={res.payout} size="lg" />
@@ -53,13 +56,13 @@ export function ResultScreen({
         )}
         {settle.state === 'saving' && (
           <View style={styles.saving}>
-            <ActivityIndicator color={colors.gold} />
-            <Text style={[type.body, { color: colors.muted }]}>{t('net.saving')}</Text>
+            <ActivityIndicator color={colors.goldText} />
+            <Text style={[tp.body, { color: colors.muted }]}>{t('net.saving')}</Text>
           </View>
         )}
         {settle.state === 'error' && (
           <View style={styles.saving}>
-            <Text style={[type.body, { color: colors.down, textAlign: 'center' }]}>{t('result.settleFailed')}</Text>
+            <Text style={[tp.body, { color: colors.down, textAlign: 'center' }]}>{t('result.settleFailed')}</Text>
             <Button variant="ghost" label={t('net.retry')} onPress={onRetry} />
           </View>
         )}
@@ -85,11 +88,11 @@ export function ResultScreen({
                 isMe && { backgroundColor: colors.goldSoft },
               ]}
             >
-              <Text style={[styles.rowPlace, type.num, { color: s.place === 1 ? colors.gold : colors.muted }]}>{s.place}</Text>
+              <Text style={[styles.rowPlace, tp.num, { color: s.place === 1 ? colors.gold : colors.muted }]}>{s.place}</Text>
               <Text style={[styles.rowName, { color: colors.text, fontWeight: isMe ? '800' : '600' }]} numberOfLines={1}>
                 {s.trader.name}
               </Text>
-              <Text style={[styles.rowChange, type.num, { color }]}>
+              <Text style={[styles.rowChange, tp.num, { color }]}>
                 {s.change > 0 ? '+' : ''}
                 {fmt(s.change * 100, 1)}%
               </Text>
@@ -107,16 +110,18 @@ export function ResultScreen({
 }
 
 function Line({ label, value, color }: { label: string; value: string; color?: string }) {
+  const styles = useLookStyles(baseStyles);
+  const tp = useType();
   const { colors } = useStore();
   return (
     <View style={styles.line}>
-      <Text style={[type.body, { color: colors.muted, flex: 1 }]}>{label}</Text>
+      <Text style={[tp.body, { color: colors.muted, flex: 1 }]}>{label}</Text>
       <Text style={[styles.lineValue, { color: color ?? colors.text }]}>{value}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   content: { padding: space.lg, gap: space.lg, paddingTop: space.xl * 1.5, paddingBottom: space.xl * 2 },
   hero: { alignItems: 'center', gap: space.xs },
   place: { fontSize: 88, fontWeight: '900', lineHeight: 96 },

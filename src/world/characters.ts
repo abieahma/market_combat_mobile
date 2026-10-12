@@ -18,7 +18,8 @@ export interface Character {
   ink: string;
   /** Sound pack to load once sounds are added. */
   soundPack: string;
-  text: { role: StringKey; motto: StringKey; games: StringKey; play: StringKey };
+  /** Wording of the world: role, motto, the games section, the play button, the balance and the greeting under the header. */
+  text: { role: StringKey; motto: StringKey; games: StringKey; play: StringKey; balance: StringKey; hello: StringKey };
 }
 
 export const CHARACTERS: Record<CharacterId, Character> = {
@@ -30,7 +31,7 @@ export const CHARACTERS: Record<CharacterId, Character> = {
     glow: { dark: '#8E3FD0', light: '#C9A2EE' },
     ink: '#FFFFFF',
     soundPack: 'violet-warehouse',
-    text: { role: 'w.waldberik.role', motto: 'w.waldberik.motto', games: 'w.waldberik.games', play: 'w.waldberik.play' },
+    text: { role: 'w.waldberik.role', motto: 'w.waldberik.motto', games: 'w.waldberik.games', play: 'w.waldberik.play', balance: 'w.waldberik.balance', hello: 'w.waldberik.hello' },
   },
   ozonik: {
     id: 'ozonik',
@@ -40,7 +41,7 @@ export const CHARACTERS: Record<CharacterId, Character> = {
     glow: { dark: '#2E5FE6', light: '#A9BFFA' },
     ink: '#FFFFFF',
     soundPack: 'blue-hub',
-    text: { role: 'w.ozonik.role', motto: 'w.ozonik.motto', games: 'w.ozonik.games', play: 'w.ozonik.play' },
+    text: { role: 'w.ozonik.role', motto: 'w.ozonik.motto', games: 'w.ozonik.games', play: 'w.ozonik.play', balance: 'w.ozonik.balance', hello: 'w.ozonik.hello' },
   },
   avitos: {
     id: 'avitos',
@@ -50,7 +51,7 @@ export const CHARACTERS: Record<CharacterId, Character> = {
     glow: { dark: '#1499C6', light: '#9ED9EE' },
     ink: '#FFFFFF',
     soundPack: 'flea-market',
-    text: { role: 'w.avitos.role', motto: 'w.avitos.motto', games: 'w.avitos.games', play: 'w.avitos.play' },
+    text: { role: 'w.avitos.role', motto: 'w.avitos.motto', games: 'w.avitos.games', play: 'w.avitos.play', balance: 'w.avitos.balance', hello: 'w.avitos.hello' },
   },
   yandos: {
     id: 'yandos',
@@ -60,7 +61,7 @@ export const CHARACTERS: Record<CharacterId, Character> = {
     glow: { dark: '#D9A400', light: '#F3D872' },
     ink: '#1A1400',
     soundPack: 'yellow-route',
-    text: { role: 'w.yandos.role', motto: 'w.yandos.motto', games: 'w.yandos.games', play: 'w.yandos.play' },
+    text: { role: 'w.yandos.role', motto: 'w.yandos.motto', games: 'w.yandos.games', play: 'w.yandos.play', balance: 'w.yandos.balance', hello: 'w.yandos.hello' },
   },
 };
 

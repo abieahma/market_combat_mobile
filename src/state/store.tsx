@@ -15,8 +15,9 @@ import { isApiError } from '../api/transport';
 import { DEFAULT_LANG, fill, formatNumber, isLangCode, LangCode, STRINGS, StringKey } from '../i18n/strings';
 import { server } from '../mock-server';
 import { MockTransport, NetworkSim } from '../mock-server/transport';
-import { Colors, paletteFor, Scheme, ThemeMode } from '../ui/theme';
-import { CHARACTERS } from '../world/characters';
+import { Colors, Look, lookFor, Scheme, ThemeMode } from '../ui/theme';
+import { CountryCode, LANGUAGE_REGION } from '../wallet/countries';
+import type { GameInfo } from '../games';
 
 const KEYS = {
   settings: 'mcombat.settings',
@@ -105,10 +106,18 @@ interface StoreValue {
   status: AuthStatus;
   settings: Settings;
   scheme: Scheme;
+  /** The look of the app: the player's universe while inside it, the night boutique otherwise. */
+  look: Look;
   colors: Colors;
+  /** The player's universe while inside it; null in the neutral cabinet. */
+  universe: CharacterId | null;
   t: (key: StringKey) => string;
   tf: (key: StringKey, vars: Record<string, string | number>) => string;
   fmt: (value: number, decimals?: number) => string;
+  /** Country of the cabinet (or of the device before it is known). */
+  country: CountryCode;
+  /** An amount of a game's currency as the player sees it. */
+  showMoney: (game: GameInfo, units: number) => string;
   setLang: (lang: LangCode) => void;
   setTheme: (theme: ThemeMode) => void;
   setHaptics: (on: boolean) => void;
@@ -130,6 +139,12 @@ interface StoreValue {
   chooseCharacter: (character: CharacterId, gender: Gender) => Promise<void>;
   changeCharacter: (character: CharacterId) => Promise<void>;
   changeGender: (gender: Gender) => Promise<void>;
+  /** Out to the neutral cabinet (free). */
+  leaveUniverse: () => Promise<void>;
+  /** Back into one's universe (UNIVERSE_RETURN_COST ABIE). */
+  returnUniverse: () => Promise<void>;
+  /** Developer panel: test ABIE. */
+  grantTest: (amount: number) => Promise<void>;
 
   net: NetworkSim;
   setNet: (patch: Partial<NetworkSim>) => void;
@@ -268,17 +283,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const scheme: Scheme = settings.theme === 'system' ? (systemScheme === 'light' ? 'light' : 'dark') : settings.theme;
 
+  // The device's region goes with every request: a weak hint for the country of a new cabinet.
+  useEffect(() => {
+    api.setRegion(LANGUAGE_REGION[settings.lang] ?? null);
+  }, [settings.lang]);
+
   const value = useMemo<StoreValue>(() => {
     const dict = STRINGS[settings.lang];
     const t = (key: StringKey) => dict[key] ?? STRINGS.en[key];
+    const p = cache?.profile;
+    const universe = p?.character && p.inUniverse !== false ? p.character : null;
+    const look = lookFor(scheme, universe);
+    const fmt = (v: number, decimals = 0) => formatNumber(v, decimals, settings.lang);
+    const country: CountryCode = p?.country?.code ?? LANGUAGE_REGION[settings.lang] ?? 'US';
     return {
       status,
       settings,
-      scheme,
-      colors: paletteFor(scheme, cache?.profile.character ? CHARACTERS[cache.profile.character] : null),
+      scheme: look.scheme,
+      look,
+      universe,
+      colors: look.colors,
       t,
       tf: (key, vars) => fill(t(key), vars),
-      fmt: (v, decimals = 0) => formatNumber(v, decimals, settings.lang),
+      fmt,
+      country,
+      showMoney: (game, units) => game.money(units, { fmt, country }),
       setLang: (lang) => updateSettings({ lang }),
       setTheme: (theme) => updateSettings({ theme }),
       setHaptics: (on) => updateSettings({ haptics: on }),
@@ -338,6 +367,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       changeGender: async (gender) => {
         const profile = await api.me.changeGender(gender);
         updateCache((c) => ({ ...c, profile }));
+      },
+      leaveUniverse: async () => {
+        const profile = await api.me.leaveUniverse();
+        updateCache((c) => ({ ...c, profile }));
+      },
+      returnUniverse: async () => {
+        const id = requestId();
+        const res = await withRetry(() => api.me.returnUniverse(id));
+        updateCache((c) => ({ ...c, profile: res.profile, balance: res.tx.balanceAfter }));
+      },
+      grantTest: async (amount) => {
+        if (!cache) return;
+        const tx = await server.dev.grant(cache.account.id, amount);
+        updateCache((c) => ({ ...c, balance: tx.balanceAfter }));
       },
 
       net,

@@ -347,6 +347,14 @@ export function SettingsScreen({
             notify(t('dev.granted'));
           }}
         />
+        <Button
+          variant="ghost"
+          label={t('dev.grantMillion')}
+          onPress={async () => {
+            await grantTest(1_000_000);
+            notify(t('dev.granted'));
+          }}
+        />
         <Button variant="ghost" label={t('dev.moderation')} onPress={onModeration} />
         <Button variant="ghost" label={t('dev.inbox')} onPress={onInbox} />
         <Button

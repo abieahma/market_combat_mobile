@@ -1,5 +1,5 @@
 // Turns an `expo export --platform web` folder into a preview that can be
-// shown in the Claude chat: one index.html with the JS and CSS inlined,
+// shown in the chat: one index.html with the JS and CSS inlined,
 // plus an assets/ folder, all referenced by relative paths.
 //
 // Usage: node scripts/make-preview.mjs [distDir=dist] [outDir=preview]

@@ -1,8 +1,8 @@
 // UI strings. English is the source and the default; every other language
 // must define the same keys (TypeScript enforces this).
 //
-// Non-English texts were written by Claude and should be checked by native
-// speakers before a store release.
+// Non-English texts are machine translations and should be checked by
+// native speakers before a store release.
 
 import { ACCOUNTS_STRINGS, AccountsKey } from './accounts';
 import { CHARACTERS_STRINGS, CharactersKey } from './characters';

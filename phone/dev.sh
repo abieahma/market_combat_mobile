@@ -37,7 +37,24 @@ follow_default_branch() {
   fi
 }
 
+# If the history on GitHub was rewritten, a plain pull can never succeed.
+# With no local edits, move to the GitHub version and keep the old one in a
+# backup branch, so nothing is lost.
+follow_rewritten_history() {
+  local branch
+  branch="$(git rev-parse --abbrev-ref HEAD)"
+  git rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null || return 1
+  git merge-base --is-ancestor HEAD "origin/$branch" && return 1
+  git merge-base --is-ancestor "origin/$branch" HEAD && return 1
+  [ -z "$(git status --porcelain --untracked-files=no)" ] || return 1
+  local backup="backup/$(date +%Y%m%d-%H%M%S)"
+  git branch -q "$backup" HEAD
+  git reset -q --hard "origin/$branch"
+  echo "[sync] история на GitHub переписана — перешёл на неё (старая копия в ветке $backup)"
+}
+
 follow_default_branch
+follow_rewritten_history
 git pull --ff-only -q || echo "[sync] не удалось подтянуть изменения — проверь интернет или локальные правки (git status)"
 [ -d node_modules ] || npm install --no-audit --no-fund
 
@@ -49,11 +66,13 @@ sync_loop() {
     before="$(git rev-parse HEAD)"
     if ! git pull --ff-only -q 2>/dev/null; then
       follow_default_branch
-      if [ "$warned" -eq 0 ]; then
-        echo "[sync] git pull не прошёл (нет сети или есть локальные правки). Повторяю каждые ${INTERVAL} с."
-        warned=1
+      if ! follow_rewritten_history; then
+        if [ "$warned" -eq 0 ]; then
+          echo "[sync] git pull не прошёл (нет сети или есть локальные правки). Повторяю каждые ${INTERVAL} с."
+          warned=1
+        fi
+        continue
       fi
-      continue
     fi
     warned=0
     after="$(git rev-parse HEAD)"

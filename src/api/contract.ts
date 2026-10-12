@@ -429,6 +429,8 @@ export interface MatchFinishRequest {
   /** Player's balance in the game currency at the end, whole units. */
   equity: number;
   actions: MatchAction[];
+  /** Match tick the player finished on: the bell, or earlier when they left. */
+  endTick?: number;
 }
 export interface MatchFinished {
   matchId: string;
@@ -521,10 +523,13 @@ export interface Offer {
 // ------------------------------------------------------- Market Kombat
 
 /**
- * Turn-based fights between the characters of the universes. Both players
- * choose a move within the turn timer without seeing the other's choice;
- * when both have chosen (or the timer runs out) the server plays the turn
- * out and both see what happened. Rules: src/game/kombat.ts.
+ * Turn-based card fights between the characters of the universes. Every
+ * fighter has an own deck of 53 cards (four suits, one per universe, of 13
+ * cards, and a joker) shuffled by the fight seed, and five cards in hand.
+ * Both players play one card within the turn timer without seeing the
+ * other's choice; when both have played (or the timer runs out) the server
+ * plays the turn out, both cards are shown, and each draws a new card.
+ * Rules: src/game/kombat.ts.
  *
  * - pvp: equal stakes in fight chips (bought with ABIE); the winner takes
  *   both, the platform keeps PLATFORM_FEE_PERCENT of the win; a draw returns
@@ -532,8 +537,81 @@ export interface Offer {
  * - bot: training only: no stakes, nothing to win.
  */
 export type KombatMode = 'bot' | 'pvp';
-export type KombatMove = 'strike' | 'special' | 'block' | 'charge';
 export type KombatStatus = 'waiting' | 'active' | 'finished' | 'cancelled';
+
+export const KOMBAT_RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'] as const;
+export type KombatRank = (typeof KOMBAT_RANKS)[number];
+/** A card: "<suit>-<rank>", the suit being a universe (waldberik-7, ozonik-A), or "joker". */
+export type KombatCardId = string;
+export const KOMBAT_JOKER = 'joker';
+
+/**
+ * A player's move for a turn: a card from the hand (the joker names the card
+ * it becomes in `as`), or a rest: more energy, and a card of the hand may be
+ * swapped for a new one.
+ */
+export type KombatPlay = { kind: 'card'; card: KombatCardId; as?: KombatCardId } | { kind: 'rest'; discard?: KombatCardId };
+
+/** What a fighter did in a played turn, as both players see it. The card swapped on a rest stays hidden. */
+export type KombatPlayed =
+  | { kind: 'card'; card: KombatCardId; as?: KombatCardId }
+  | { kind: 'rest'; discarded: boolean }
+  | { kind: 'stunned' }
+  | { kind: 'timeout' };
+
+/** A lasting effect on a fighter: a shield absorbs `amount` each turn, poison takes `amount` each turn, a stun skips the next turn. */
+export interface KombatEffect {
+  kind: 'shield' | 'poison' | 'stun';
+  amount: number;
+  /** Turns left, this one included. */
+  turns: number;
+}
+
+/** One fighter in one played turn: what they did, what it did, and how they came out of it. */
+export interface KombatTurnSide {
+  play: KombatPlayed;
+  /** The card that worked: the card played, or the joker's choice; null without a card. */
+  card: KombatCardId | null;
+  /** Energy the card cost. */
+  cost: number;
+  /** The card is of the fighter's own universe (+25 %). */
+  ownSuit: boolean;
+  /** Same suit as the fighter's previous card: +1 combo. */
+  chain: boolean;
+  /** Combo levels the attack spent. */
+  comboUsed: number;
+  /** Damage of the attack before defences, and what of it reached the opponent. */
+  attack: number;
+  crit: boolean;
+  dealt: number;
+  /** Damage this fighter's defence and shield absorbed. */
+  absorbed: number;
+  /** Damage this fighter's counter (the 9) did. */
+  counter: number;
+  /** Poison damage this fighter took this turn. */
+  poison: number;
+  healed: number;
+  /** Energy this fighter took from the opponent. */
+  stole: number;
+  /** Hit while boosting a combo (J): the combo is lost. */
+  caught: boolean;
+  /** Effects this card put on: a shield on this fighter, poison or a stun on the opponent. */
+  applied: KombatEffect[];
+  /** All damage this fighter took this turn. */
+  taken: number;
+  /** After the turn. */
+  hp: number;
+  energy: number;
+  combo: number;
+  effects: KombatEffect[];
+}
+
+export interface KombatTurnView {
+  turn: number;
+  /** Server time the turn was played. */
+  at: number;
+  sides: [KombatTurnSide, KombatTurnSide];
+}
 
 export interface KombatFighterView {
   nickname: string;
@@ -544,17 +622,11 @@ export interface KombatFighterView {
   energy: number;
   combo: number;
   boosted: boolean;
-}
-
-export interface KombatTurnView {
-  turn: number;
-  moves: [KombatMove, KombatMove];
-  /** Damage each fighter took this turn. */
-  damage: [number, number];
-  crit: [boolean, boolean];
-  /** Health the special move gave back, energy it took from the other. */
-  healed: [number, number];
-  drained: [number, number];
+  effects: KombatEffect[];
+  /** Suit of the fighter's previous card: one more of it adds a combo level. */
+  lastSuit: CharacterId | null;
+  handSize: number;
+  deckSize: number;
 }
 
 export interface KombatSettlement {
@@ -575,6 +647,8 @@ export interface KombatView {
   id: string;
   mode: KombatMode;
   status: KombatStatus;
+  /** Version of the card rules the fight is played by. */
+  rules: number;
   /** This player's index in `fighters`. */
   you: 0 | 1;
   /** The second fighter is null while waiting for an opponent. */
@@ -585,9 +659,16 @@ export interface KombatView {
   /** When the current turn is played out; null outside an active fight. */
   deadline: number | null;
   serverNow: number;
+  createdAt: number;
+  /** When both fighters were in and the first turn began; null while waiting. */
+  startedAt: number | null;
+  finishedAt: number | null;
+  /** This player's cards; the opponent's hand is never shown. */
+  hand: KombatCardId[];
   /** This player's move for the current turn; the opponent's is never shown before the turn is played. */
-  myMove: KombatMove | null;
-  last: KombatTurnView | null;
+  myPlay: KombatPlay | null;
+  /** Every played turn, oldest first. */
+  log: KombatTurnView[];
   stake: number;
   stakeLots: number;
   settlement: KombatSettlement | null;
@@ -600,10 +681,13 @@ export interface KombatStartRequest {
   stakeLots?: number;
   requestId: string;
 }
-/** POST /v1/kombat/fights/{id}/move */
+/**
+ * POST /v1/kombat/fights/{id}/move. 400 invalid_input if the card is not in
+ * the hand, the joker names no card, or energy is short; 409 if the turn is over.
+ */
 export interface KombatMoveRequest {
   turn: number;
-  move: KombatMove;
+  play: KombatPlay;
 }
 
 /** Energy boost: energy comes back twice as fast, for a paid number of pvp fights. Very expensive on purpose. */
@@ -615,6 +699,62 @@ export type KombatBoostPackId = (typeof KOMBAT_BOOST_PACKS)[number]['id'];
 /** GET /v1/kombat/boost → KombatBoost; POST /v1/kombat/boost { pack, requestId } → { tx, boost } */
 export interface KombatBoost {
   fightsLeft: number;
+}
+
+// ------------------------------------------------------------------ history
+
+/**
+ * The player's finished games, newest first: Chart Duel matches and Market
+ * Kombat fights, training included.
+ * GET /v1/history?game=duel|kombat&cursor=&limit=  → HistoryPage
+ * GET /v1/history/{id}                            → HistoryDetail
+ */
+export type HistoryOutcome = 'win' | 'loss' | 'draw' | 'cancelled' | 'abandoned';
+
+export interface HistoryItem {
+  id: string;
+  game: GameId;
+  startedAt: number;
+  finishedAt: number | null;
+  outcome: HistoryOutcome;
+  /** Chart Duel: the player's place among the traders. */
+  place: number | null;
+  players: number;
+  /** Market Kombat: training or a fight with a player, the opponent and the turns played. */
+  mode: KombatMode | null;
+  opponent: { nickname: string; character: CharacterId; gender: Gender; isBot: boolean } | null;
+  turns: number | null;
+  /** Stake in the game currency. */
+  stake: number;
+  /** ABIE back against the ABIE staked. */
+  net: number;
+}
+
+export interface HistoryPage {
+  items: HistoryItem[];
+  next: string | null;
+}
+
+/** A Chart Duel match as the server keeps it: replaying the seed with the actions shows the whole match again. */
+export interface DuelRecord {
+  seed: number;
+  stake: number;
+  nickname: string;
+  actions: MatchAction[];
+  /** Tick the player finished on; null for a match closed by the server. */
+  endTick: number | null;
+  equity: number;
+  place: number;
+  fee: number;
+  payout: number;
+}
+
+export interface HistoryDetail {
+  item: HistoryItem;
+  /** Chart Duel matches. */
+  duel?: DuelRecord;
+  /** Market Kombat fights: the whole fight with every turn. */
+  kombat?: KombatView;
 }
 
 // ------------------------------------------------------- help (later step)

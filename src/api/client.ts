@@ -16,8 +16,10 @@ import type {
   KombatBoost,
   KombatBoostPackId,
   KombatMode,
-  KombatMove,
+  KombatPlay,
   KombatView,
+  HistoryDetail,
+  HistoryPage,
   Offer,
   Proposal,
   ProposalDraft,
@@ -86,7 +88,8 @@ export interface ApiClient {
   kombat: {
     start(mode: KombatMode, stakeLots: number | undefined, requestId: string): Promise<KombatView>;
     get(id: string): Promise<KombatView>;
-    move(id: string, turn: number, move: KombatMove): Promise<KombatView>;
+    /** Plays a card (or rests) for the turn. */
+    move(id: string, turn: number, play: KombatPlay): Promise<KombatView>;
     leave(id: string): Promise<KombatView>;
     boost(): Promise<KombatBoost>;
     buyBoost(pack: KombatBoostPackId, requestId: string): Promise<{ tx: WalletTx; boost: KombatBoost }>;
@@ -94,6 +97,11 @@ export interface ApiClient {
   matches: {
     start(req: MatchStartRequest): Promise<MatchStarted>;
     finish(matchId: string, req: MatchFinishRequest): Promise<MatchFinished>;
+  };
+  history: {
+    /** Finished matches and fights, newest first; `game` narrows to one game. */
+    list(game?: GameId | null, cursor?: string | null, limit?: number): Promise<HistoryPage>;
+    get(id: string): Promise<HistoryDetail>;
   };
 }
 
@@ -163,7 +171,7 @@ export function createApi(transport: Transport): ApiClient {
     kombat: {
       start: (mode, stakeLots, requestId) => call('POST', '/v1/kombat/fights', { mode, stakeLots, requestId }),
       get: (id) => call('GET', `/v1/kombat/fights/${encodeURIComponent(id)}`),
-      move: (id, turn, move) => call('POST', `/v1/kombat/fights/${encodeURIComponent(id)}/move`, { turn, move }),
+      move: (id, turn, play) => call('POST', `/v1/kombat/fights/${encodeURIComponent(id)}/move`, { turn, play }),
       leave: (id) => call('POST', `/v1/kombat/fights/${encodeURIComponent(id)}/leave`),
       boost: () => call('GET', '/v1/kombat/boost'),
       buyBoost: (pack, requestId) => call('POST', '/v1/kombat/boost', { pack, requestId }),
@@ -171,6 +179,13 @@ export function createApi(transport: Transport): ApiClient {
     matches: {
       start: (req) => call('POST', '/v1/matches', req),
       finish: (matchId, req) => call('POST', `/v1/matches/${encodeURIComponent(matchId)}/finish`, req),
+    },
+    history: {
+      list: (game, cursor, limit) => {
+        const q = [game ? `game=${encodeURIComponent(game)}` : '', cursor ? `cursor=${encodeURIComponent(cursor)}` : '', limit ? `limit=${limit}` : ''].filter(Boolean).join('&');
+        return call('GET', `/v1/history${q ? `?${q}` : ''}`);
+      },
+      get: (id) => call('GET', `/v1/history/${encodeURIComponent(id)}`),
     },
   };
 }

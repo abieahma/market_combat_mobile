@@ -6,11 +6,12 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { InboxBanner, Toast } from './src/components/Overlays';
 import { KombatLobby } from './src/components/KombatLobby';
 import { StakeSheet } from './src/components/StakeSheet';
-import type { Proposal } from './src/api/contract';
+import type { GameId, Proposal } from './src/api/contract';
 import { isApiError } from './src/api/transport';
 import { ShownGame, shownGames } from './src/games';
 import { CharacterScreen } from './src/screens/CharacterScreen';
 import { DuelResult, DuelScreen } from './src/screens/DuelScreen';
+import { HistoryDetailScreen, HistoryScreen } from './src/screens/HistoryScreen';
 import { HubScreen } from './src/screens/HubScreen';
 import { InboxScreen } from './src/screens/InboxScreen';
 import { KombatScreen } from './src/screens/KombatScreen';
@@ -40,7 +41,10 @@ type Route =
   | { name: 'proposalNew' }
   | { name: 'proposal'; id: string }
   | { name: 'proposalEdit'; proposal: Proposal }
-  | { name: 'moderation' };
+  | { name: 'moderation' }
+  /** Finished games; opened from a game tile (one game) or the wallet (all). */
+  | { name: 'history'; game: GameId | null; back: 'hub' | 'wallet' }
+  | { name: 'historyItem'; id: string; list: { game: GameId | null; back: 'hub' | 'wallet' } };
 
 export default function App() {
   const [fontsLoaded, fontError] = useFonts({
@@ -91,6 +95,14 @@ function Root() {
       }
       if (route.name === 'proposalEdit') {
         setRoute({ name: 'proposal', id: route.proposal.id });
+        return true;
+      }
+      if (route.name === 'history') {
+        setRoute(route.back === 'wallet' ? { name: 'wallet' } : { name: 'hub' });
+        return true;
+      }
+      if (route.name === 'historyItem') {
+        setRoute({ name: 'history', ...route.list });
         return true;
       }
       const backToSettings =
@@ -170,7 +182,7 @@ function Root() {
         setRoute((r) => (r.name === 'result' && r.result.matchId === result.matchId ? { ...r, settle } : r));
       setRoute({ name: 'result', result, settle: { state: 'saving' } });
       try {
-        const res = await finishMatch(result.matchId, result.myPlace, result.equity, result.actions);
+        const res = await finishMatch(result.matchId, result.myPlace, result.equity, result.actions, result.endTick);
         update({ state: 'done', res });
       } catch {
         update({ state: 'error' });
@@ -201,6 +213,7 @@ function Root() {
             starting={starting}
             onSettings={() => setRoute({ name: 'settings' })}
             onWallet={() => setRoute({ name: 'wallet' })}
+            onHistory={(g) => setRoute({ name: 'history', game: g.info.id, back: 'hub' })}
           />
         );
         break;
@@ -222,7 +235,7 @@ function Root() {
         screen = <CharacterScreen mode="change" onBack={() => setRoute({ name: 'settings' })} />;
         break;
       case 'wallet':
-        screen = <WalletScreen onBack={() => setRoute({ name: 'hub' })} />;
+        screen = <WalletScreen onBack={() => setRoute({ name: 'hub' })} onHistory={() => setRoute({ name: 'history', game: null, back: 'wallet' })} />;
         break;
       case 'inbox':
         screen = <InboxScreen onBack={() => setRoute(route.back === 'settings' ? { name: 'settings' } : { name: 'hub' })} />;
@@ -278,6 +291,20 @@ function Root() {
         break;
       case 'moderation':
         screen = <ModerationScreen onBack={() => setRoute({ name: 'settings' })} />;
+        break;
+      case 'history': {
+        const list = { game: route.game, back: route.back };
+        screen = (
+          <HistoryScreen
+            game={route.game}
+            onBack={() => setRoute(route.back === 'wallet' ? { name: 'wallet' } : { name: 'hub' })}
+            onOpen={(id) => setRoute({ name: 'historyItem', id, list })}
+          />
+        );
+        break;
+      }
+      case 'historyItem':
+        screen = <HistoryDetailScreen key={route.id} id={route.id} onBack={() => setRoute({ name: 'history', ...route.list })} />;
         break;
     }
   }

@@ -118,6 +118,50 @@ const expectErr = async (p, code) => { try { await p; assert.fail('expected ' + 
     assert.ok(await server.dev.walletAudit());
   });
 
+  await t('history: a duel match is kept with its actions, and its replay is the same match', async () => {
+    const D = require('../.stub-build/game/duel.js');
+    const api = createApi(new MockTransport(server, () => sim));
+    api.setToken((await api.auth.google(makeMockGoogleToken({ sub: 'g-hist', email: 'hist@gmail.com', name: 'Hist' }))).session.token);
+    await api.me.chooseCharacter('yandos', 'f');
+    const m = await api.matches.start({ game: 'duel', stakeLots: 5, requestId: 'h1' });
+    const nickname = (await api.me.get()).profile.nickname;
+    // Play the match the way the screen does: actions between ticks, the player leaves at tick 150.
+    let duel = D.createDuel(m.seed, D.duelSlots(nickname), m.stake);
+    const plan = { 10: { type: 'open', side: 1, leverage: 5 }, 60: { type: 'close' }, 80: { type: 'open', side: -1, leverage: 2 } };
+    const actions = [];
+    while (duel.tick < 150) {
+      const a = plan[duel.tick];
+      if (a) {
+        duel = D.applyAction(duel, D.DUEL_ME, a);
+        actions.push({ tick: duel.tick, ...a });
+      }
+      duel = D.stepDuel(duel);
+    }
+    const final = D.standings(duel);
+    const mine = final.find((x) => x.trader.id === D.DUEL_ME);
+    const equity = Math.floor(mine.equity);
+    await api.matches.finish(m.matchId, { place: mine.place, equity, actions, endTick: duel.tick });
+    assert.ok(duel.log.some((e) => e.type === 'open' && e.traderId !== D.DUEL_ME), 'the feed has the bots too');
+    assert.ok(duel.log.some((e) => e.type === 'close' && e.traderId === D.DUEL_ME));
+
+    const page = await api.history.list('duel');
+    assert.equal(page.items.length, 1);
+    assert.equal(page.items[0].id, m.matchId);
+    assert.deepEqual([page.items[0].place, page.items[0].players, page.items[0].stake], [mine.place, 4, 500]);
+    const detail = await api.history.get(m.matchId);
+    assert.deepEqual([detail.duel.seed, detail.duel.endTick, detail.duel.nickname, detail.duel.actions], [m.seed, 150, nickname, actions]);
+    const states = D.replayDuel(detail.duel.seed, detail.duel.stake, detail.duel.nickname, detail.duel.actions, detail.duel.endTick);
+    const last = states[states.length - 1];
+    assert.equal(last.tick, 150);
+    assert.deepEqual(last.log, duel.log);
+    assert.equal(Math.floor(D.standings(last).find((x) => x.trader.id === D.DUEL_ME).equity), equity);
+    // Old matches without actions still show; bad actions are dropped.
+    const bad = await api.matches.start({ game: 'duel', stakeLots: 1, requestId: 'h2' });
+    await api.matches.finish(bad.matchId, { place: 3, equity: 100, actions: [{ tick: -1, type: 'open' }, { tick: 5, type: 'open', side: 1, leverage: 7 }, { tick: 6, type: 'close' }] });
+    assert.deepEqual((await api.history.get(bad.matchId)).duel.actions, [{ tick: 6, type: 'close' }]);
+    assert.equal((await api.history.list()).items.length, 2);
+  });
+
   await t('rate is fixed forever: no route changes a game, publishing again is refused', async () => {
     const raw = new MockTransport(server, () => sim);
     for (const method of ['PATCH', 'PUT', 'DELETE']) {

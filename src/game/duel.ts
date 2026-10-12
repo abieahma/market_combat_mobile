@@ -80,7 +80,19 @@ export interface DuelState {
   finished: boolean;
   /** Short-lived events for the UI (cleared by the caller after reading). */
   events: DuelEvent[];
+  /** Everything that happened in the match, oldest first: who did what and when. */
+  log: DuelLogEntry[];
 }
+
+/**
+ * One line of the match feed. `pnl` is the result of the position at the
+ * price it was closed, in the game currency, before the closing fee.
+ * A 'bell' close is the final bell closing whatever was still open.
+ */
+export type DuelLogEntry =
+  | { tick: number; type: 'news'; kind: NewsKind; direction: Side }
+  | { tick: number; type: 'open'; traderId: string; side: Side; leverage: Leverage; price: number }
+  | { tick: number; type: 'close' | 'liquidated' | 'bell'; traderId: string; side: Side; leverage: Leverage; price: number; pnl: number };
 
 export type DuelEvent =
   | { type: 'news'; news: NewsEvent }
@@ -204,7 +216,7 @@ export function createDuel(seed: number, slots: PlayerSlot[], startCash: number 
     };
     return trader;
   });
-  return { seed, startCash, tick: 0, prices, news, traders, botRng, finished: false, events: [] };
+  return { seed, startCash, tick: 0, prices, news, traders, botRng, finished: false, events: [], log: [] };
 }
 
 export function priceAt(state: DuelState, tick = state.tick): number {
@@ -275,11 +287,17 @@ function closePosition(trader: Trader, price: number): Trader {
 export function applyAction(state: DuelState, traderId: string, action: DuelAction): DuelState {
   if (state.finished) return state;
   const price = priceAt(state);
-  const traders = state.traders.map((t) => {
-    if (t.id !== traderId) return t;
-    return action.type === 'open' ? openPosition(t, action.side, action.leverage, price, state.tick) : closePosition(t, price);
-  });
-  return { ...state, traders };
+  const before = state.traders.find((t) => t.id === traderId);
+  if (!before) return state;
+  const after = action.type === 'open' ? openPosition(before, action.side, action.leverage, price, state.tick) : closePosition(before, price);
+  if (after === before) return state;
+  const traders = state.traders.map((t) => (t.id === traderId ? after : t));
+  const p = before.position ?? after.position!;
+  const entry: DuelLogEntry =
+    action.type === 'open'
+      ? { tick: state.tick, type: 'open', traderId, side: p.side, leverage: p.leverage, price }
+      : { tick: state.tick, type: 'close', traderId, side: p.side, leverage: p.leverage, price, pnl: unrealizedPnl(p, price) };
+  return { ...state, traders, log: [...state.log, entry] };
 }
 
 // -------------------------------------------------------------------- bots
@@ -350,23 +368,31 @@ export function stepDuel(state: DuelState): DuelState {
   if (state.finished) return state;
   const tick = state.tick + 1;
   const events: DuelEvent[] = [];
+  const log = [...state.log];
   let next: DuelState = { ...state, tick, events };
   const price = priceAt(next);
 
-  for (const n of next.news) if (n.tick === tick) events.push({ type: 'news', news: n });
+  for (const n of next.news) {
+    if (n.tick !== tick) continue;
+    events.push({ type: 'news', news: n });
+    log.push({ tick, type: 'news', kind: n.kind, direction: n.direction });
+  }
 
   // Liquidations.
   next = {
     ...next,
     traders: next.traders.map((t) => {
       if (!t.position) return t;
-      if (unrealizedPnl(t.position, price) <= -LIQUIDATION_LOSS * t.position.margin) {
+      const pnl = unrealizedPnl(t.position, price);
+      if (pnl <= -LIQUIDATION_LOSS * t.position.margin) {
         events.push({ type: 'liquidated', traderId: t.id });
+        log.push({ tick, type: 'liquidated', traderId: t.id, side: t.position.side, leverage: t.position.leverage, price, pnl });
         const closed = closePosition(t, price);
         return { ...closed, liquidations: t.liquidations + 1 };
       }
       return t;
     }),
+    log,
   };
 
   // Bots.
@@ -386,8 +412,51 @@ export function stepDuel(state: DuelState): DuelState {
 
   // Final bell: everything is closed at the last price.
   if (tick >= MATCH_TICKS) {
-    next = { ...next, finished: true, traders: next.traders.map((t) => closePosition(t, price)) };
+    const bell: DuelLogEntry[] = next.traders
+      .filter((t) => t.position)
+      .map((t) => ({ tick, type: 'bell', traderId: t.id, side: t.position!.side, leverage: t.position!.leverage, price, pnl: unrealizedPnl(t.position!, price) }));
+    next = { ...next, finished: true, traders: next.traders.map((t) => closePosition(t, price)), log: [...next.log, ...bell] };
     events.push({ type: 'finished' });
   }
   return next;
+}
+
+// ------------------------------------------------------------------ players
+
+/** The player's id in a match. */
+export const DUEL_ME = 'me';
+/** The three computer traders every match has; the same names everywhere, so a replay shows the same table. */
+export const DUEL_BOTS: PlayerSlot[] = [
+  { id: 'b1', name: 'BullRush', isBot: true, style: 'momentum' },
+  { id: 'b2', name: 'Contra', isBot: true, style: 'contrarian' },
+  { id: 'b3', name: 'Headliner', isBot: true, style: 'newshound' },
+];
+
+export function duelSlots(nickname: string): PlayerSlot[] {
+  return [{ id: DUEL_ME, name: nickname, isBot: false }, ...DUEL_BOTS];
+}
+
+/**
+ * Plays a finished match again from its seed and the player's actions:
+ * the state at every tick, from the start to `endTick` (the bell by default).
+ * The match runs exactly as it did, because the rules depend on nothing else.
+ */
+export function replayDuel(seed: number, stake: number, nickname: string, actions: { tick: number; type: 'open' | 'close'; side?: Side; leverage?: number }[], endTick: number | null = null): DuelState[] {
+  const last = Math.min(MATCH_TICKS, endTick ?? MATCH_TICKS);
+  let state = createDuel(seed, duelSlots(nickname), stake);
+  const states: DuelState[] = [];
+  let next = 0;
+  for (;;) {
+    while (next < actions.length && actions[next].tick === state.tick) {
+      const a = actions[next++];
+      const lev = LEVERAGES.find((l) => l === a.leverage) ?? 1;
+      state = applyAction(state, DUEL_ME, a.type === 'open' ? { type: 'open', side: a.side === -1 ? -1 : 1, leverage: lev } : { type: 'close' });
+    }
+    // Actions of ticks already passed (out of order) are skipped.
+    while (next < actions.length && actions[next].tick < state.tick) next++;
+    states.push(state);
+    if (state.finished || state.tick >= last) break;
+    state = stepDuel(state);
+  }
+  return states;
 }

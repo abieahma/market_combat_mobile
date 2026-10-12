@@ -22,9 +22,12 @@ export function HubScreen({
   onPropose,
   onSettings,
   onWallet,
+  onHistory,
   starting,
 }: {
   onPlay: (game: ShownGame) => void;
+  /** Finished games of one game. */
+  onHistory: (game: ShownGame) => void;
   /** Opens a paid game (one payment). */
   onPayEntry: (game: ShownGame) => void;
   /** Proposals of new games. */
@@ -152,6 +155,7 @@ export function HubScreen({
           key={g.info.id}
           game={g}
           onPress={() => (!g.playable ? onChoose() : g.needsEntry ? onPayEntry(g) : onPlay(g))}
+          onHistory={profile?.character ? () => onHistory(g) : undefined}
           starting={starting}
           playLabel={
             !g.playable
@@ -284,7 +288,20 @@ function ChartVignette({ width, height }: { width: number; height: number }) {
   );
 }
 
-function GameTile({ game: shown, onPress, starting, playLabel }: { game: ShownGame; onPress: () => void; starting: boolean; playLabel: string }) {
+function GameTile({
+  game: shown,
+  onPress,
+  onHistory,
+  starting,
+  playLabel,
+}: {
+  game: ShownGame;
+  onPress: () => void;
+  /** Absent before a character is chosen: nothing has been played yet. */
+  onHistory?: () => void;
+  starting: boolean;
+  playLabel: string;
+}) {
   const styles = useLookStyles(baseStyles);
   const tp = useType();
   const { colors, t, fmt, showMoney, look } = useStore();
@@ -326,6 +343,7 @@ function GameTile({ game: shown, onPress, starting, playLabel }: { game: ShownGa
           </View>
           {!!rate && <Text style={[styles.rate, { color: colors.goldText }]}>{rate}</Text>}
           <Button label={playLabel} onPress={onPress} big variant={inactive ? 'glass' : 'gold'} disabled={starting || !shown.entry} />
+          {onHistory && <Button label={t('history.title')} onPress={onHistory} variant="ghost" />}
         </View>
       </Glass>
     </LiftPressable>

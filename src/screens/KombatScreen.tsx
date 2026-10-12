@@ -1,41 +1,50 @@
 // A Market Kombat fight. The screen asks the server for the fight every
-// moment: moves are chosen within the turn timer, the opponent's choice stays
-// hidden, and when the server plays the turn out both fighters see it here.
+// moment: a card is chosen within the turn timer, the opponent's hand and
+// choice stay hidden, and when the server plays the turn out both cards turn
+// over here. Every turn stays in the log below; after the fight it can be
+// replayed step by step.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Easing, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import type { KombatFighterView, KombatMove, KombatView } from '../api/contract';
+import { CHARACTER_IDS, KOMBAT_JOKER, KOMBAT_RANKS } from '../api/contract';
+import type { CharacterId, KombatCardId, KombatPlay, KombatView } from '../api/contract';
 import { isApiError } from '../api/transport';
-import { Avatar } from '../components/Avatar';
+import { cardEffects, cardName, KombatCard, SuitGlyph } from '../components/cards';
+import { fighterName, FighterRow, HpChart, KombatReplay, snapshotAt, TurnLog, TurnTable } from '../components/KombatParts';
 import { GAMES } from '../games';
-import { SPECIALS } from '../game/kombat';
+import { cardDef, KOMBAT_REST_ENERGY } from '../game/kombat';
 import { StringKey } from '../i18n/strings';
 import { api, useStore } from '../state/store';
 import { AbieAmount, Button } from '../ui/kit';
 import { Glass, useReducedMotion } from '../ui/luxe';
 import { fonts, radius, space } from '../ui/theme';
-import { characterName, worldColor } from '../world/characters';
+import { characterName } from '../world/characters';
 import { useLookStyles, useType } from '../ui/look';
 
 const POLL_MS = 700;
 const native = Platform.OS !== 'web';
-const MOVE_LABEL: Record<KombatMove, StringKey> = { strike: 'kombat.strike', special: 'kombat.strike', block: 'kombat.block', charge: 'kombat.charge' };
 const KOMBAT = GAMES.find((g) => g.id === 'kombat')!;
+const HAND_GAP = 8;
+const RULES: StringKey[] = ['rules.1', 'rules.2', 'rules.3', 'rules.4', 'rules.5', 'rules.6', 'rules.7'];
 
 export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onHub: () => void; onAgain: () => void }) {
   const styles = useLookStyles(baseStyles);
   const tp = useType();
-  const { colors, t, tf, fmt, scheme, refresh, notify, haptic, showMoney, look } = useStore();
+  const { colors, t, tf, fmt, refresh, notify, haptic, showMoney, settings } = useStore();
   const [view, setView] = useState<KombatView | null>(null);
   const [offset, setOffset] = useState(0);
   const [, setTick] = useState(0);
   const [sending, setSending] = useState(false);
   const [leaveArmed, setLeaveArmed] = useState(false);
+  const [selected, setSelected] = useState<KombatCardId | null>(null);
+  const [jokerAs, setJokerAs] = useState<KombatCardId | null>(null);
+  const [width, setWidth] = useState(0);
+  const [replay, setReplay] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const lastTurn = useRef(0);
   const settled = useRef(false);
   const reduced = useReducedMotion();
   const hit = useRef([new Animated.Value(0), new Animated.Value(0)]).current;
-  const lunge = useRef([new Animated.Value(0), new Animated.Value(0)]).current;
 
   const take = useCallback((v: KombatView) => {
     setView(v);
@@ -73,28 +82,23 @@ export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onH
     return () => clearTimeout(id);
   }, [leaveArmed]);
 
-  // A turn was played: the attackers lunge, whoever was hit shakes.
+  // A turn was played: whoever was hit shakes; the choice is cleared for the next turn.
+  const last = view?.log[view.log.length - 1] ?? null;
   useEffect(() => {
-    const last = view?.last;
-    if (!last || last.turn === lastTurn.current) return;
+    if (!view || !last || last.turn === lastTurn.current) return;
+    const first = lastTurn.current === 0 && view.log.length > 1;
     lastTurn.current = last.turn;
-    const mine = view!.you;
-    if (last.damage[mine] > 0) haptic('warning');
+    setSelected(null);
+    setJokerAs(null);
+    if (first) return; // opened in the middle of a fight: nothing to animate
+    if (last.sides[view.you].taken > 0) haptic('warning');
     if (reduced) return;
     for (const i of [0, 1] as const) {
-      const attacked = last.moves[i] === 'strike' || last.moves[i] === 'special';
-      if (attacked) {
-        Animated.sequence([
-          Animated.timing(lunge[i], { toValue: 1, duration: 140, easing: Easing.out(Easing.quad), useNativeDriver: native }),
-          Animated.timing(lunge[i], { toValue: 0, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: native }),
-        ]).start();
-      }
-      if (last.damage[i] > 0) {
-        hit[i].setValue(0);
-        Animated.timing(hit[i], { toValue: 1, duration: 520, easing: Easing.linear, useNativeDriver: native }).start();
-      }
+      if (last.sides[i].taken <= 0) continue;
+      hit[i].setValue(0);
+      Animated.timing(hit[i], { toValue: 1, duration: 560, easing: Easing.linear, useNativeDriver: native }).start();
     }
-  }, [view, reduced, haptic, hit, lunge]);
+  }, [view, last, reduced, haptic, hit]);
 
   // Once settled, the wallet on the other screens is brought up to date.
   useEffect(() => {
@@ -118,18 +122,19 @@ export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onH
   const them = (me === 0 ? 1 : 0) as 0 | 1;
   const myFighter = view.fighters[me]!;
   const theirFighter = view.fighters[them];
-  const special = SPECIALS[myFighter.character];
   const left = view.deadline ? Math.max(0, Math.ceil((view.deadline - (Date.now() + offset)) / 1000)) : 0;
   const active = view.status === 'active';
-  const nameOf = (f: KombatFighterView | null) => (f ? (f.isBot ? t('kombat.computer') : f.nickname) : '');
-  const moveName = (f: KombatFighterView, m: KombatMove) => (m === 'special' ? t(`special.${f.character}` as StringKey) : t(MOVE_LABEL[m]));
+  const over = view.status === 'finished' || view.status === 'cancelled';
+  const stunned = myFighter.effects.some((e) => e.kind === 'stun');
+  const canAct = active && !view.myPlay && !stunned && !sending;
+  const handW = width > 0 ? Math.floor((width - HAND_GAP * 4) / 5) : 0;
 
-  const choose = async (move: KombatMove) => {
-    if (!active || view.myMove || sending) return;
+  const send = async (play: KombatPlay) => {
+    if (!canAct) return;
     haptic('tap');
     setSending(true);
     try {
-      take(await api.kombat.move(view.id, view.turn, move));
+      take(await api.kombat.move(view.id, view.turn, play));
     } catch (e) {
       if (!(isApiError(e) && e.code === 'conflict')) notify(t('net.error'));
     } finally {
@@ -163,11 +168,15 @@ export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onH
     );
   }
 
-  const over = view.status === 'finished' || view.status === 'cancelled';
   const s = view.settlement;
+  const chosen = view.myPlay;
+  const chosenCard = chosen?.kind === 'card' ? chosen.card : null;
+  const prompt = !active ? null : stunned ? t('kombat.stunnedNow') : chosen ? (chosen.kind === 'rest' ? t('kombat.restChosen') : t('kombat.chosen')) : t('kombat.choose');
+  const damageOf = (i: 0 | 1) => (last ? { n: last.sides[i].taken, crit: last.sides[i === 0 ? 1 : 0].crit, key: last.turn } : null);
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))} />
       <View style={styles.topRow}>
         {!over ? (
           <Pressable
@@ -184,51 +193,11 @@ export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onH
         )}
         <Text style={[styles.turn, { color: colors.muted }]}>{tf('kombat.turn', { n: Math.min(view.turn, view.maxTurns), max: view.maxTurns })}</Text>
         {active && (
-          <View style={[styles.timer, { borderColor: left <= 3 ? colors.down : colors.line, backgroundColor: colors.surface }]}>
-            <Text style={[styles.timerText, { color: left <= 3 ? colors.down : colors.text }]}>{left}</Text>
+          <View style={[styles.timer, { borderColor: left <= 5 ? colors.down : colors.line, backgroundColor: colors.surface }]}>
+            <Text style={[styles.timerText, { color: left <= 5 ? colors.down : colors.text }]}>{left}</Text>
           </View>
         )}
       </View>
-
-      <Glass style={styles.arena}>
-        <Fighter f={myFighter} name={nameOf(myFighter)} side={0} hit={hit[me]} lunge={lunge[me]} damage={view.last?.damage[me] ?? 0} crit={view.last?.crit[me] ?? false} turn={view.last?.turn ?? 0} />
-        <Text style={[styles.vs, { color: look.brand ? colors.goldText : colors.goldHi }]}>VS</Text>
-        {theirFighter && (
-          <Fighter f={theirFighter} name={nameOf(theirFighter)} side={1} hit={hit[them]} lunge={lunge[them]} damage={view.last?.damage[them] ?? 0} crit={view.last?.crit[them] ?? false} turn={view.last?.turn ?? 0} />
-        )}
-      </Glass>
-
-      {view.last && theirFighter && (
-        <View style={[styles.report, { borderColor: colors.line }]}>
-          <Text style={[styles.reportLine, { color: colors.text }]}>
-            {t('prop.you')}: {moveName(myFighter, view.last.moves[me])}
-            {view.last.damage[them] > 0 ? `  → −${view.last.damage[them]}` : ''}
-          </Text>
-          <Text style={[styles.reportLine, { color: colors.muted }]}>
-            {nameOf(theirFighter)}: {moveName(theirFighter, view.last.moves[them])}
-            {view.last.damage[me] > 0 ? `  → −${view.last.damage[me]}` : ''}
-          </Text>
-        </View>
-      )}
-
-      {!over && (
-        <>
-          <Text style={[styles.prompt, { color: view.myMove ? colors.gold : colors.text }]}>{view.myMove ? t('kombat.chosen') : t('kombat.choose')}</Text>
-          <View style={styles.moves}>
-            <MoveButton label={t('kombat.strike')} hint={t('kombat.strikeHint')} chosen={view.myMove === 'strike'} disabled={!!view.myMove || sending} onPress={() => choose('strike')} />
-            <MoveButton
-              label={t(`special.${myFighter.character}` as StringKey)}
-              hint={tf('kombat.specialHint', { cost: special.cost })}
-              chosen={view.myMove === 'special'}
-              disabled={!!view.myMove || sending || myFighter.energy < special.cost}
-              onPress={() => choose('special')}
-              accent={worldColor(myFighter.character, scheme)}
-            />
-            <MoveButton label={t('kombat.block')} hint={t('kombat.blockHint')} chosen={view.myMove === 'block'} disabled={!!view.myMove || sending} onPress={() => choose('block')} />
-            <MoveButton label={t('kombat.charge')} hint={t('kombat.chargeHint')} chosen={view.myMove === 'charge'} disabled={!!view.myMove || sending} onPress={() => choose('charge')} />
-          </View>
-        </>
-      )}
 
       {over && (
         <Glass style={styles.result}>
@@ -238,6 +207,9 @@ export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onH
             <>
               <Text style={[styles.resultTitle, { color: s?.winner === me ? colors.gold : colors.text }]}>
                 {s?.winner === null ? t('kombat.draw') : s?.winner === me ? t('kombat.win') : t('kombat.lose')}
+              </Text>
+              <Text style={[tp.body, { color: colors.muted, textAlign: 'center' }]}>
+                {tf(s?.reason === 'ko' ? 'kombat.byKo' : s?.reason === 'forfeit' ? 'kombat.byForfeit' : 'kombat.byTurns', { n: view.log.length })}
               </Text>
               {view.mode === 'bot' || !s ? (
                 <Text style={[tp.body, { color: colors.muted, textAlign: 'center' }]}>{t('kombat.trainingDone')}</Text>
@@ -260,126 +232,226 @@ export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onH
               )}
             </>
           )}
+          {view.log.length > 0 && <Button label={replay ? t('replay.close') : t('kombat.replay')} onPress={() => setReplay((r) => !r)} variant="glass" />}
           <Button label={t('kombat.again')} onPress={onAgain} big />
           <Button label={t('result.toHub')} onPress={onHub} variant="ghost" />
         </Glass>
       )}
 
+      {over && replay && width > 0 ? (
+        <KombatReplay view={view} width={width} />
+      ) : (
+        <>
+          {theirFighter && (
+            <FighterRow f={theirFighter} snap={snapshotAt(view, them, null)} name={fighterName(theirFighter, t)} hit={hit[them]} damage={damageOf(them)} />
+          )}
+          {width > 0 && <TurnTable turn={last} view={view} width={width} pending={chosen ? t('kombat.chosenShort') : null} />}
+          <FighterRow f={myFighter} snap={snapshotAt(view, me, null)} name="" mine hit={hit[me]} damage={damageOf(me)} />
+        </>
+      )}
+
+      {active && (
+        <>
+          <Text style={[styles.prompt, { color: chosen || stunned ? colors.goldText : colors.text }]}>{prompt}</Text>
+
+          {selected && canAct && (
+            <CardDetail
+              card={selected}
+              jokerAs={jokerAs}
+              setJokerAs={setJokerAs}
+              owner={myFighter.character}
+              energy={myFighter.energy}
+              chain={myFighter.lastSuit}
+              onPlay={(play) => send(play)}
+              onClose={() => setSelected(null)}
+              busy={sending}
+            />
+          )}
+
+          <View style={styles.hand}>
+            {handW > 0 &&
+              view.hand.map((c) => {
+                const def = c === KOMBAT_JOKER ? null : cardDef(c);
+                const affordable = def ? def.cost <= myFighter.energy : true;
+                return (
+                  <KombatCard
+                    key={c}
+                    card={c}
+                    as={c === KOMBAT_JOKER && selected === c ? jokerAs : null}
+                    owner={myFighter.character}
+                    width={handW}
+                    selected={selected === c || chosenCard === c}
+                    dim={!canAct ? chosenCard !== c : !affordable}
+                    onPress={
+                      canAct
+                        ? () => {
+                            haptic('tap');
+                            setSelected((cur) => (cur === c ? null : c));
+                            if (c === KOMBAT_JOKER && !jokerAs) setJokerAs(bestJoker(myFighter.character, myFighter.energy));
+                          }
+                        : undefined
+                    }
+                  />
+                );
+              })}
+          </View>
+          <Text style={[styles.handNote, { color: colors.faint }]}>
+            {tf('kombat.deckLeft', { n: myFighter.deckSize })}
+            {canAct && !selected ? ` · ${t('kombat.tapCard')}` : ''}
+          </Text>
+          {canAct && (
+            <Button label={tf('kombat.rest', { n: KOMBAT_REST_ENERGY })} onPress={() => send({ kind: 'rest' })} variant="ghost" disabled={sending} />
+          )}
+        </>
+      )}
+
+      <Pressable accessibilityRole="button" onPress={() => setRulesOpen((o) => !o)} style={styles.rulesHead}>
+        <Text style={[styles.section, { color: colors.text }]}>{t('rules.title')}</Text>
+        <Text style={[styles.rulesToggle, { color: colors.goldText }]}>{rulesOpen ? '−' : '+'}</Text>
+      </Pressable>
+      {rulesOpen && (
+        <View style={styles.rules}>
+          {RULES.map((k) => (
+            <Text key={k} style={[tp.body, { color: colors.muted }]}>
+              {t(k)}
+            </Text>
+          ))}
+          <Text style={[tp.body, { color: colors.muted }]}>
+            {tf('rules.own', { name: characterName(myFighter.character, settings.lang) })}
+          </Text>
+        </View>
+      )}
+
+      {!(over && replay) && view.log.length > 0 && (
+        <>
+          <Text style={[styles.section, { color: colors.text }]}>{t('kombat.log')}</Text>
+          {width > 0 && <HpChart view={view} width={width} />}
+          <TurnLog view={view} />
+        </>
+      )}
     </ScrollView>
   );
 }
 
-function Fighter({
-  f,
-  name,
-  side,
-  hit,
-  lunge,
-  damage,
-  crit,
-  turn,
+/** The computer's sensible default for the joker: the dearest card of the own suit the energy allows. */
+function bestJoker(owner: CharacterId, energy: number): KombatCardId {
+  for (const r of ['A', 'K', 'Q', '10', '9', '8', '6', '4', '2']) {
+    const id = `${owner}-${r}`;
+    if (cardDef(id).cost <= energy) return id;
+  }
+  return `${owner}-2`;
+}
+
+/** The chosen card up close: what it does, what it costs, and the buttons to play or swap it. */
+function CardDetail({
+  card,
+  jokerAs,
+  setJokerAs,
+  owner,
+  energy,
+  chain,
+  onPlay,
+  onClose,
+  busy,
 }: {
-  f: KombatFighterView;
-  name: string;
-  side: 0 | 1;
-  hit: Animated.Value;
-  lunge: Animated.Value;
-  damage: number;
-  crit: boolean;
-  turn: number;
+  card: KombatCardId;
+  jokerAs: KombatCardId | null;
+  setJokerAs: (c: KombatCardId) => void;
+  owner: CharacterId;
+  energy: number;
+  chain: CharacterId | null;
+  onPlay: (play: KombatPlay) => void;
+  onClose: () => void;
+  busy: boolean;
 }) {
   const styles = useLookStyles(baseStyles);
-  const { colors, t, settings, scheme } = useStore();
-  const tint = worldColor(f.character, scheme);
-  const dir = side === 0 ? 1 : -1;
-  const shake = hit.interpolate({ inputRange: [0, 0.15, 0.3, 0.45, 0.6, 1], outputRange: [0, -6, 6, -4, 3, 0] });
-  const flash = hit.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0, 0.55, 0] });
-  const rise = hit.interpolate({ inputRange: [0, 1], outputRange: [0, -26] });
-  const fade = hit.interpolate({ inputRange: [0, 0.2, 0.8, 1], outputRange: [0, 1, 1, 0] });
+  const { colors, t, tf, settings, haptic } = useStore();
+  const joker = card === KOMBAT_JOKER;
+  const shown = joker ? jokerAs : card;
+  const def = shown ? cardDef(shown) : null;
+  const affordable = !!def && def.cost <= energy;
+  const lines = shown ? cardEffects(shown, owner, t, tf) : [t('fx.joker')];
+  const jokerSuit = def?.suit ?? owner;
   return (
-    <View style={styles.fighter}>
-      <Animated.View
-        style={{
-          transform: [{ translateX: Animated.add(lunge.interpolate({ inputRange: [0, 1], outputRange: [0, 18 * dir] }), shake) }],
-        }}
-      >
-        <Avatar character={f.character} gender={f.gender} size={92} />
-        <Animated.View pointerEvents="none" style={[styles.flash, { opacity: flash, backgroundColor: colors.down }]} />
-        {damage > 0 && (
-          <Animated.Text key={turn} style={[styles.damage, { color: crit ? colors.goldHi : colors.down, opacity: fade, transform: [{ translateY: rise }] }]}>
-            −{damage}
-            {crit ? '!' : ''}
-          </Animated.Text>
-        )}
-      </Animated.View>
-      <Text style={[styles.charName, { color: tint }]} numberOfLines={1}>
-        {characterName(f.character, settings.lang)}
-      </Text>
-      <Text style={[styles.nick, { color: colors.muted }]} numberOfLines={1}>
-        {name}
-        {f.boosted ? ` · ${t('kombat.boosted')}` : ''}
-      </Text>
-      <Bar value={f.hp} max={100} color={f.hp > 50 ? colors.up : f.hp > 25 ? colors.gold : colors.down} />
-      <Bar value={f.energy} max={100} color={tint} thin />
-      <View style={styles.pips}>
-        {[0, 1, 2].map((i) => (
-          <View key={i} style={[styles.pip, { borderColor: colors.goldText, backgroundColor: i < f.combo ? colors.goldText : 'transparent' }]} />
-        ))}
+    <Glass style={styles.detail}>
+      <View style={styles.detailRow}>
+        <KombatCard card={card} as={joker ? jokerAs : null} owner={owner} width={78} />
+        <View style={styles.detailText}>
+          <Text style={[styles.detailName, { color: colors.text }]}>{shown ? cardName(shown, t) : t('card.joker')}</Text>
+          {def && (
+            <Text style={[styles.detailSuit, { color: colors.muted }]}>
+              {tf('kombat.suitOf', { name: characterName(def.suit, settings.lang) })}
+              {def.suit === owner ? ` · ${t('kombat.ownSuit')}` : ''}
+            </Text>
+          )}
+          {lines.map((l, i) => (
+            <Text key={i} style={[styles.detailLine, { color: colors.text }]}>
+              {l}
+            </Text>
+          ))}
+          {def && (
+            <Text style={[styles.detailLine, { color: affordable ? colors.muted : colors.down }]}>{tf('kombat.costOf', { n: def.cost, have: energy })}</Text>
+          )}
+          {def && chain === def.suit && <Text style={[styles.detailLine, { color: colors.goldText }]}>{t('kombat.chainHint')}</Text>}
+        </View>
       </View>
-    </View>
-  );
-}
 
-function Bar({ value, max, color, thin }: { value: number; max: number; color: string; thin?: boolean }) {
-  const styles = useLookStyles(baseStyles);
-  const { colors } = useStore();
-  return (
-    <View style={[styles.bar, thin && styles.barThin, { backgroundColor: colors.surfaceAlt }]}>
-      <View style={{ width: `${Math.max(0, Math.min(100, (value / max) * 100))}%`, height: '100%', backgroundColor: color, borderRadius: 4 }} />
-    </View>
-  );
-}
+      {joker && (
+        <View style={styles.picker}>
+          <Text style={[styles.pickerTitle, { color: colors.muted }]}>{t('kombat.jokerPick')}</Text>
+          <View style={styles.pickRow}>
+            {CHARACTER_IDS.map((suit) => (
+              <Pressable
+                key={suit}
+                accessibilityRole="button"
+                accessibilityLabel={characterName(suit, settings.lang)}
+                accessibilityState={{ selected: suit === jokerSuit }}
+                onPress={() => {
+                  haptic('tap');
+                  setJokerAs(`${suit}-${def?.rank ?? 'A'}`);
+                }}
+                style={[styles.pickSuit, { borderColor: suit === jokerSuit ? colors.gold : colors.line, backgroundColor: suit === jokerSuit ? colors.goldSoft : 'transparent' }]}
+              >
+                <SuitGlyph suit={suit} size={22} />
+              </Pressable>
+            ))}
+          </View>
+          <View style={styles.pickRanks}>
+            {KOMBAT_RANKS.map((rank) => {
+              const id = `${jokerSuit}-${rank}`;
+              const on = id === jokerAs;
+              const can = cardDef(id).cost <= energy;
+              return (
+                <Pressable
+                  key={rank}
+                  accessibilityRole="button"
+                  accessibilityLabel={cardName(id, t)}
+                  accessibilityState={{ selected: on }}
+                  onPress={() => {
+                    haptic('tap');
+                    setJokerAs(id);
+                  }}
+                  style={[styles.pickRank, { borderColor: on ? colors.gold : colors.line, backgroundColor: on ? colors.goldSoft : 'transparent', opacity: can ? 1 : 0.45 }]}
+                >
+                  <Text style={[styles.pickRankText, { color: on ? colors.goldText : colors.text }]}>{rank}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      )}
 
-function MoveButton({
-  label,
-  hint,
-  chosen,
-  disabled,
-  onPress,
-  accent,
-}: {
-  label: string;
-  hint: string;
-  chosen: boolean;
-  disabled: boolean;
-  onPress: () => void;
-  accent?: string;
-}) {
-  const styles = useLookStyles(baseStyles);
-  const { colors } = useStore();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ selected: chosen, disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.move,
-        {
-          borderColor: chosen ? colors.gold : accent ?? colors.line,
-          backgroundColor: chosen ? colors.goldSoft : colors.glass,
-          opacity: disabled && !chosen ? 0.45 : pressed ? 0.8 : 1,
-        },
-      ]}
-    >
-      <Text style={[styles.moveLabel, { color: chosen ? colors.gold : colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-        {label}
-      </Text>
-      <Text style={[styles.moveHint, { color: colors.muted }]} numberOfLines={1}>
-        {hint}
-      </Text>
-    </Pressable>
+      <View style={styles.detailButtons}>
+        <Button
+          label={affordable ? t('kombat.play') : t('kombat.noEnergy')}
+          onPress={() => shown && onPlay(joker ? { kind: 'card', card, as: shown } : { kind: 'card', card })}
+          disabled={busy || !affordable}
+          style={{ flex: 1 }}
+        />
+        <Button label={t('common.back')} onPress={onClose} variant="ghost" />
+      </View>
+      <Button label={tf('kombat.swap', { n: KOMBAT_REST_ENERGY })} onPress={() => onPlay({ kind: 'rest', discard: card })} variant="ghost" disabled={busy} />
+    </Glass>
   );
 }
 
@@ -400,30 +472,33 @@ const baseStyles = StyleSheet.create({
   content: { padding: space.lg, gap: space.md, paddingBottom: space.xl * 2 },
   waiting: { padding: space.xl, gap: space.md, alignItems: 'center', alignSelf: 'stretch' },
   waitTitle: { fontFamily: fonts.display, fontSize: 28 },
-  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm, minHeight: 40 },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm, minHeight: 40, marginTop: -space.md },
   leave: { height: 36, paddingHorizontal: space.md, borderRadius: radius.pill, borderWidth: 1, justifyContent: 'center', flexShrink: 1 },
   leaveText: { fontSize: 13, fontWeight: '700' },
   turn: { fontSize: 13, fontWeight: '600' },
   timer: { minWidth: 44, height: 36, borderRadius: radius.pill, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   timerText: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  arena: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', padding: space.md, gap: space.sm },
-  vs: { fontFamily: fonts.display, fontSize: 30, marginTop: 30 },
-  fighter: { flex: 1, alignItems: 'center', gap: 5 },
-  flash: { position: 'absolute', left: 0, top: 0, width: 92, height: 92, borderRadius: 46 },
-  damage: { position: 'absolute', alignSelf: 'center', top: 6, fontSize: 26, fontWeight: '900' },
-  charName: { fontFamily: fonts.display, fontSize: 20, marginTop: 4 },
-  nick: { fontSize: 12 },
-  bar: { alignSelf: 'stretch', height: 8, borderRadius: 4, overflow: 'hidden' },
-  barThin: { height: 5 },
-  pips: { flexDirection: 'row', gap: 6, marginTop: 2 },
-  pip: { width: 9, height: 9, borderRadius: 5, borderWidth: 1 },
-  report: { borderTopWidth: 1, borderBottomWidth: 1, paddingVertical: space.sm, gap: 2 },
-  reportLine: { fontSize: 14, fontWeight: '600' },
   prompt: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
-  moves: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  move: { width: '48%', flexGrow: 1, borderWidth: 1, borderRadius: radius.md, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center', gap: 2 },
-  moveLabel: { fontFamily: fonts.displaySemi, fontSize: 20 },
-  moveHint: { fontSize: 11 },
+  hand: { flexDirection: 'row', gap: HAND_GAP, justifyContent: 'center', paddingTop: 10 },
+  handNote: { fontSize: 12, textAlign: 'center' },
+  detail: { padding: space.md, gap: space.md },
+  detailRow: { flexDirection: 'row', gap: space.md },
+  detailText: { flex: 1, minWidth: 0, gap: 3 },
+  detailName: { fontFamily: fonts.display, fontSize: 24, lineHeight: 26 },
+  detailSuit: { fontSize: 12, marginBottom: 2 },
+  detailLine: { fontSize: 14 },
+  detailButtons: { flexDirection: 'row', gap: space.sm },
+  picker: { gap: space.sm },
+  pickerTitle: { fontSize: 12, fontWeight: '700' },
+  pickRow: { flexDirection: 'row', gap: space.sm },
+  pickSuit: { flex: 1, height: 40, borderRadius: radius.sm, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  pickRanks: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  pickRank: { minWidth: 34, height: 32, borderRadius: radius.sm, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  pickRankText: { fontSize: 13, fontWeight: '800' },
+  rulesHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.sm },
+  rulesToggle: { fontSize: 22, fontWeight: '700', paddingHorizontal: space.sm },
+  rules: { gap: 6 },
+  section: { fontFamily: fonts.displaySemi, fontSize: 22 },
   result: { padding: space.lg, gap: space.md, alignItems: 'stretch' },
   resultTitle: { fontFamily: fonts.display, fontSize: 40, textAlign: 'center' },
   net: { fontSize: 14, fontWeight: '700', textAlign: 'center' },

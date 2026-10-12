@@ -1,22 +1,37 @@
-// Market Kombat on the server stub: matching players, the turn timer,
-// hidden moves, playing turns out with the shared rules (src/game/kombat.ts)
-// and settling stakes. A bot fight is training: no stakes, nothing to win.
+// Market Kombat on the server stub: matching players, the turn timer, hidden
+// hands and plays, playing turns out with the shared rules
+// (src/game/kombat.ts) and settling stakes. A bot fight is training: no
+// stakes, nothing to win.
 
 import { CHARACTER_IDS, KOMBAT_BOOST_PACKS, PLATFORM_ACCOUNT, PLATFORM_FEE_PERCENT } from '../api/contract';
 import type {
   CharacterId,
   Gender,
   GameEntry,
+  HistoryItem,
   KombatBoost,
   KombatMode,
-  KombatMove,
+  KombatPlay,
   KombatSettlement,
   KombatStatus,
   KombatView,
   Profile,
   WalletTx,
 } from '../api/contract';
-import { botMove, canUse, createKombat, forfeit, KOMBAT_MAX_TURNS, KOMBAT_MOVES, KOMBAT_TURN_MS, KombatState, resolveTurn } from '../game/kombat';
+import {
+  botPlay,
+  createKombat,
+  forfeit,
+  isStunned,
+  KOMBAT_MAX_HP,
+  KOMBAT_MAX_TURNS,
+  KOMBAT_RULES,
+  KOMBAT_START_ENERGY,
+  KOMBAT_TURN_MS,
+  KombatState,
+  playProblem,
+  resolveTurn,
+} from '../game/kombat';
 import { nextInt, seedFrom } from '../game/rng';
 import { WELCOME_BONUS } from '../wallet/ledger';
 import { fail, randomId } from './errors';
@@ -26,6 +41,8 @@ import type { MockServer } from './server';
 export const KOMBAT_WAIT_MS = 2 * 60 * 1000;
 /** The test opponent (developer panel) joins after this long. */
 const SPARRING_DELAY_MS = 1500;
+/** A stunned player against the computer sees the stun this long before the turn is played. */
+const STUN_PAUSE_MS = 2500;
 export const SPARRING_ACCOUNT = 'acc_sparring';
 const BOT = 'bot';
 
@@ -39,24 +56,41 @@ interface Side {
 
 interface FightRow {
   id: string;
+  /** Rules version the fight is played by; rows of older rules are reset. */
+  rules: number;
   mode: KombatMode;
   status: KombatStatus;
   sides: [Side, Side | null];
   stakeLots: number;
   stake: number;
   createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
   seed: number;
   state: KombatState | null;
   deadline: number | null;
-  /** Moves chosen for the current turn; never shown to the other side before the turn is played. */
-  moves: [KombatMove | null, KombatMove | null];
+  /** Plays chosen for the current turn; never shown to the other side before the turn is played. */
+  plays: [KombatPlay | null, KombatPlay | null];
   settlements: [KombatSettlement | null, KombatSettlement | null];
 }
 
-export function registerKombatRoutes(s: MockServer) {
-  const fights = () => s.db.table<FightRow>('fights');
+/** What the history needs from the fights. */
+export interface KombatHistory {
+  items(accountId: string): HistoryItem[];
+  view(accountId: string, id: string): KombatView | null;
+}
+
+function isPlay(x: unknown): x is KombatPlay {
+  if (!x || typeof x !== 'object') return false;
+  const p = x as Record<string, unknown>;
+  if (p.kind === 'rest') return p.discard === undefined || typeof p.discard === 'string';
+  return p.kind === 'card' && typeof p.card === 'string' && (p.as === undefined || typeof p.as === 'string');
+}
+
+export function registerKombatRoutes(s: MockServer): KombatHistory {
   const boosts = () => s.db.table<KombatBoost>('boosts');
   const game = (): GameEntry => s.game('kombat');
+  let resetDone = false;
 
   const sideOf = (f: FightRow, accountId: string): 0 | 1 | null =>
     f.sides[0].accountId === accountId ? 0 : f.sides[1]?.accountId === accountId ? 1 : null;
@@ -87,6 +121,24 @@ export function registerKombatRoutes(s: MockServer) {
     return { payout, tx };
   };
 
+  /**
+   * Fights of older rules cannot go on with the new cards: they are removed
+   * once, and the stakes of fights still waiting or going on come back.
+   */
+  const fights = () => {
+    const table = s.db.table<FightRow>('fights');
+    if (resetDone) return table;
+    resetDone = true;
+    for (const f of table.values()) {
+      if (f.rules === KOMBAT_RULES) continue;
+      if (f.mode === 'pvp' && (f.status === 'waiting' || f.status === 'active')) {
+        for (const i of [0, 1] as const) if (f.sides[i] && f.sides[i]!.accountId !== BOT) payBack(f, i, f.stake);
+      }
+      table.delete(f.id);
+    }
+    return table;
+  };
+
   /** Settles a finished fight: the winner takes both stakes, the platform keeps PLATFORM_FEE_PERCENT of the win. */
   const settle = (f: FightRow): FightRow => {
     const st = f.state!;
@@ -110,24 +162,26 @@ export function registerKombatRoutes(s: MockServer) {
       const p = s.profile(side.accountId);
       s.saveProfile({ ...p, stats: { matches: p.stats.matches + 1, wins: p.stats.wins + (won ? 1 : 0), earned: p.stats.earned + net } });
     }
-    return { ...f, status: 'finished', deadline: null, moves: [null, null], settlements };
+    return { ...f, status: 'finished', deadline: null, finishedAt: s.now(), plays: [null, null], settlements };
   };
 
-  /** The computer side's move (training bot, or the test opponent). */
-  const computerMove = (f: FightRow, i: 0 | 1): FightRow => {
-    const { move, state } = botMove(f.state!, i);
-    const moves = [...f.moves] as FightRow['moves'];
-    moves[i] = move;
-    return { ...f, state, moves };
+  /** The computer side's play (training bot, or the test opponent). */
+  const computerPlay = (f: FightRow, i: 0 | 1): FightRow => {
+    const { play, state } = botPlay(f.state!, i);
+    const plays = [...f.plays] as FightRow['plays'];
+    plays[i] = play;
+    return { ...f, state, plays };
   };
+
+  /** A side is ready when it has played, is the computer, or is stunned (a stunned fighter skips the turn). */
+  const ready = (f: FightRow, i: 0 | 1) => f.plays[i] !== null || isComputer(f.sides[i]) || isStunned(f.state!.fighters[i]);
 
   const playTurn = (f: FightRow): FightRow => {
     let g = f;
-    for (const i of [0, 1] as const) {
-      if (g.moves[i] === null) g = isComputer(g.sides[i]) ? computerMove(g, i) : { ...g, moves: (i === 0 ? ['block', g.moves[1]] : [g.moves[0], 'block']) as FightRow['moves'] };
-    }
-    const state = resolveTurn(g.state!, [g.moves[0]!, g.moves[1]!]);
-    const next: FightRow = { ...g, state, moves: [null, null], deadline: state.finished ? null : s.now() + KOMBAT_TURN_MS };
+    for (const i of [0, 1] as const) if (g.plays[i] === null && isComputer(g.sides[i]) && !isStunned(g.state!.fighters[i])) g = computerPlay(g, i);
+    // A player who did not choose in time misses the turn.
+    const state = resolveTurn(g.state!, g.plays, s.now());
+    const next: FightRow = { ...g, state, plays: [null, null], deadline: state.finished ? null : s.now() + KOMBAT_TURN_MS };
     return state.finished ? settle(next) : next;
   };
 
@@ -164,10 +218,11 @@ export function registerKombatRoutes(s: MockServer) {
   const start = (f: FightRow, sides: [Side, Side]): FightRow => {
     const boosted = f.mode === 'pvp' ? [takeBoost(sides[0].accountId), sides[1].accountId === SPARRING_ACCOUNT ? false : takeBoost(sides[1].accountId)] : [false, false];
     const state = createKombat(f.seed, { character: sides[0].character, boosted: boosted[0] }, { character: sides[1].character, boosted: boosted[1] });
-    return { ...f, sides, status: 'active', state, deadline: s.now() + KOMBAT_TURN_MS };
+    const now = s.now();
+    return { ...f, sides, status: 'active', state, startedAt: now, deadline: now + KOMBAT_TURN_MS };
   };
 
-  /** Brings a fight up to the present: joins, cancels, and turns whose timer ran out. */
+  /** Brings a fight up to the present: joins, cancels, stunned turns and turns whose timer ran out. */
   const advance = (f: FightRow): FightRow => {
     let g = f;
     const now = s.now();
@@ -175,7 +230,7 @@ export function registerKombatRoutes(s: MockServer) {
       if (now - g.createdAt > KOMBAT_WAIT_MS) {
         const { tx, payout } = payBack(g, 0, g.stake);
         const st: KombatSettlement = { winner: null, reason: 'forfeit', stake: g.stake, back: g.stake, fee: 0, payout, net: 0, tx };
-        g = { ...g, status: 'cancelled', settlements: [st, null] };
+        g = { ...g, status: 'cancelled', finishedAt: now, settlements: [st, null] };
       } else if (s.devSettings.sparring && now - g.createdAt >= SPARRING_DELAY_MS) {
         const p = sparringProfile();
         // The test opponent pays its stake like anyone else; in the developer panel it never runs dry.
@@ -189,7 +244,13 @@ export function registerKombatRoutes(s: MockServer) {
       }
     }
     let guard = 0;
-    while (g.status === 'active' && g.deadline !== null && now >= g.deadline && guard++ <= KOMBAT_MAX_TURNS) g = playTurn(g);
+    while (g.status === 'active' && g.deadline !== null && guard++ <= KOMBAT_MAX_TURNS) {
+      const overdue = now >= g.deadline;
+      // Everyone who can play has played (a stunned player against the computer, say): no need to wait for the timer.
+      const allReady = ready(g, 0) && ready(g, 1) && now >= g.deadline - KOMBAT_TURN_MS + STUN_PAUSE_MS;
+      if (!overdue && !allReady) break;
+      g = playTurn(g);
+    }
     if (g !== f) fights().put(g.id, g);
     return g;
   };
@@ -204,17 +265,21 @@ export function registerKombatRoutes(s: MockServer) {
         character: side.character,
         gender: side.gender,
         isBot: side.accountId === BOT,
-        hp: Math.max(0, st?.hp ?? 100),
-        energy: st?.energy ?? 0,
+        hp: Math.max(0, st?.hp ?? KOMBAT_MAX_HP),
+        energy: st?.energy ?? KOMBAT_START_ENERGY,
         combo: st?.combo ?? 0,
         boosted: st?.boosted ?? false,
+        effects: st?.effects ?? [],
+        lastSuit: st?.lastSuit ?? null,
+        handSize: st?.hand.length ?? 0,
+        deckSize: st?.deck.length ?? 0,
       };
     };
-    const last = f.state?.log[f.state.log.length - 1] ?? null;
     return {
       id: f.id,
       mode: f.mode,
       status: f.status,
+      rules: f.rules,
       you: me,
       fighters: [fighter(0)!, fighter(1)],
       turn: f.state?.turn ?? 1,
@@ -222,8 +287,12 @@ export function registerKombatRoutes(s: MockServer) {
       turnMs: KOMBAT_TURN_MS,
       deadline: f.status === 'active' ? f.deadline : null,
       serverNow: s.now(),
-      myMove: f.moves[me],
-      last: last ? { turn: last.turn, moves: last.moves, damage: last.damage, crit: last.crit, healed: last.healed, drained: last.drained } : null,
+      createdAt: f.createdAt,
+      startedAt: f.startedAt,
+      finishedAt: f.finishedAt,
+      hand: f.state?.fighters[me].hand ?? [],
+      myPlay: f.plays[me],
+      log: f.state?.log ?? [],
       stake: f.stake,
       stakeLots: f.stakeLots,
       settlement: f.settlements[me],
@@ -259,16 +328,19 @@ export function registerKombatRoutes(s: MockServer) {
     const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
     const base: FightRow = {
       id,
+      rules: KOMBAT_RULES,
       mode: body.mode,
       status: 'waiting',
       sides: [me, null],
       stakeLots: 0,
       stake: 0,
       createdAt: s.now(),
+      startedAt: null,
+      finishedAt: null,
       seed,
       state: null,
       deadline: null,
-      moves: [null, null],
+      plays: [null, null],
       settlements: [null, null],
     };
 
@@ -308,20 +380,24 @@ export function registerKombatRoutes(s: MockServer) {
 
   s.route('POST', '/v1/kombat/fights/{id}/move', ({ req, params }): KombatView => {
     const { f, me } = mine(s.accountIdFor(req), params[0]);
-    const body = (req.body ?? {}) as { turn?: unknown; move?: unknown };
+    const body = (req.body ?? {}) as { turn?: unknown; play?: unknown };
     if (f.status !== 'active' || !f.state) return fail(409, 'conflict', 'The fight is not going on');
     if (body.turn !== f.state.turn) return fail(409, 'conflict', 'That turn is already over');
-    if (!KOMBAT_MOVES.includes(body.move as KombatMove)) return fail(400, 'invalid_input', 'Unknown move');
-    const move = body.move as KombatMove;
-    if (!canUse(f.state.fighters[me], move)) return fail(400, 'invalid_input', 'Not enough energy for the special move');
-    if (f.moves[me]) return view(f, me); // a move, once chosen, stays
-    const moves = [...f.moves] as FightRow['moves'];
-    moves[me] = move;
-    let g: FightRow = { ...f, moves };
+    if (!isPlay(body.play)) return fail(400, 'invalid_input', 'play must be a card or a rest');
+    const play = body.play;
+    if (f.plays[me]) return view(f, me); // a play, once chosen, stays
+    if (isStunned(f.state.fighters[me])) return fail(409, 'conflict', 'Stunned: this turn is skipped');
+    const problem = playProblem(f.state.fighters[me], play);
+    if (problem === 'not_in_hand') return fail(400, 'invalid_input', 'That card is not in your hand');
+    if (problem === 'joker') return fail(400, 'invalid_input', 'The joker must name a card');
+    if (problem === 'energy') return fail(400, 'invalid_input', 'Not enough energy for that card');
+    const plays = [...f.plays] as FightRow['plays'];
+    plays[me] = play.kind === 'rest' ? (play.discard ? { kind: 'rest', discard: play.discard } : { kind: 'rest' }) : play.as ? { kind: 'card', card: play.card, as: play.as } : { kind: 'card', card: play.card };
+    let g: FightRow = { ...f, plays };
     const other = (me === 0 ? 1 : 0) as 0 | 1;
     // The computer (or the test opponent) answers at once; then the turn is played without waiting.
-    if (isComputer(g.sides[other]) && !g.moves[other]) g = computerMove(g, other);
-    if (g.moves[0] && g.moves[1]) g = playTurn(g);
+    if (isComputer(g.sides[other]) && !g.plays[other] && !isStunned(g.state!.fighters[other])) g = computerPlay(g, other);
+    if (ready(g, 0) && ready(g, 1)) g = playTurn(g);
     fights().put(g.id, g);
     return view(g, me);
   });
@@ -332,7 +408,7 @@ export function registerKombatRoutes(s: MockServer) {
     if (f.status === 'waiting') {
       const { tx, payout } = payBack(f, 0, f.stake);
       const st: KombatSettlement = { winner: null, reason: 'forfeit', stake: f.stake, back: f.stake, fee: 0, payout, net: 0, tx };
-      g = { ...f, status: 'cancelled', settlements: [st, null] };
+      g = { ...f, status: 'cancelled', finishedAt: s.now(), settlements: [st, null] };
     } else if (f.status === 'active' && f.state) {
       g = settle({ ...f, state: forfeit(f.state, me) });
     }
@@ -360,4 +436,38 @@ export function registerKombatRoutes(s: MockServer) {
     const boost = repeated ? before : boosts().put(accountId, { fightsLeft: before.fightsLeft + pack.fights });
     return { tx, boost };
   });
+
+  return {
+    items: (accountId) =>
+      fights()
+        .values()
+        .filter((f) => sideOf(f, accountId) !== null)
+        .map(advance)
+        .filter((f) => f.status === 'finished' || f.status === 'cancelled')
+        .map((f): HistoryItem => {
+          const me = sideOf(f, accountId)!;
+          const them = f.sides[me === 0 ? 1 : 0];
+          const st = f.settlements[me];
+          const winner = st?.winner ?? null;
+          return {
+            id: f.id,
+            game: 'kombat',
+            startedAt: f.startedAt ?? f.createdAt,
+            finishedAt: f.finishedAt,
+            outcome: f.status === 'cancelled' ? 'cancelled' : winner === null ? 'draw' : winner === me ? 'win' : 'loss',
+            place: null,
+            players: 2,
+            mode: f.mode,
+            opponent: them ? { nickname: them.accountId === BOT ? '' : them.nickname, character: them.character, gender: them.gender, isBot: them.accountId === BOT } : null,
+            turns: f.state?.log.length ?? 0,
+            stake: f.stake,
+            net: st?.net ?? 0,
+          };
+        }),
+    view: (accountId, id) => {
+      const f = fights().get(id);
+      const me = f ? sideOf(f, accountId) : null;
+      return f && me !== null ? view(advance(f), me) : null;
+    },
+  };
 }

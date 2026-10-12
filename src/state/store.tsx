@@ -135,7 +135,7 @@ interface StoreValue {
   opened: string[];
   /** Opens a match; for a game with a currency the stake is bought from ABIE in the same step. */
   startMatch: (game: GameId, stakeLots: number) => Promise<MatchStarted>;
-  finishMatch: (matchId: string, place: number, equity: number, actions: MatchAction[]) => Promise<MatchFinished>;
+  finishMatch: (matchId: string, place: number, equity: number, actions: MatchAction[], endTick?: number) => Promise<MatchFinished>;
   chooseCharacter: (character: CharacterId, gender: Gender) => Promise<void>;
   changeCharacter: (character: CharacterId) => Promise<void>;
   changeGender: (gender: Gender) => Promise<void>;
@@ -347,9 +347,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (tx) updateCache((c) => ({ ...c, balance: tx.balanceAfter }));
         return res;
       },
-      finishMatch: async (matchId, place, equity, actions) => {
+      finishMatch: async (matchId, place, equity, actions, endTick) => {
         // The server settles a match only once, so retrying after a lost answer is safe.
-        const res = await withRetry(() => api.matches.finish(matchId, { place, equity, actions }));
+        const res = await withRetry(() => api.matches.finish(matchId, { place, equity, actions, endTick }));
         updateCache((c) => ({ ...c, profile: res.profile, balance: res.tx ? res.tx.balanceAfter : c.balance }));
         refresh();
         return res;

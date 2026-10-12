@@ -31,6 +31,7 @@ import type {
   GameId,
   GameList,
   Identity,
+  MatchAction,
   MatchFinished,
   MatchFinishRequest,
   MatchStarted,
@@ -41,12 +42,13 @@ import type {
   WalletView,
 } from '../api/contract';
 import type { ApiRequest, ApiResponse } from '../api/transport';
-import { MATCH_SECONDS } from '../game/duel';
+import { LEVERAGES, MATCH_SECONDS, MATCH_TICKS } from '../game/duel';
 import { countryOfPhone, isCountry, quoteAbie, registrationCountry } from '../wallet/countries';
 import { emptyLedger, LedgerState, post, WELCOME_BONUS } from '../wallet/ledger';
 import { Database, KeyValue } from './db';
 import { fail, randomId, ServerError } from './errors';
 import { gameEntryProblem, normalizeGame, PLATFORM_REVISIONS, PUBLISHED_GAMES } from './games';
+import { registerHistoryRoutes } from './history';
 import { registerKombatRoutes } from './kombat';
 import { moderate, registerProposalRoutes } from './proposals';
 import { WalletError, WalletService } from './wallet-service';
@@ -81,7 +83,7 @@ interface ChallengeRow {
   nonce?: string;
   result?: AuthResult;
 }
-interface MatchRow {
+export interface MatchRow {
   id: string;
   accountId: string;
   game: GameId;
@@ -92,6 +94,11 @@ interface MatchRow {
   stakeLots: number;
   startTx: WalletTx | null;
   finished?: MatchFinished;
+  finishedAt?: number;
+  /** Kept for the history: the player's actions, the tick they finished on, their nickname then. */
+  actions?: MatchAction[];
+  endTick?: number | null;
+  nickname?: string;
 }
 
 /** Game currency ledger kinds: bought, put into a match, returned by a match, turned back into ABIE. */
@@ -129,6 +136,24 @@ export function maskPhone(e164: string): string {
   return `${e164.slice(0, e164.length - 10)} ••• ••• ${e164.slice(-4, -2)} ${e164.slice(-2)}`;
 }
 
+/** The player's actions as the history keeps them: well-formed ones only, at most 500. */
+function cleanActions(raw: unknown): MatchAction[] {
+  if (!Array.isArray(raw)) return [];
+  const out: MatchAction[] = [];
+  for (const a of raw.slice(0, 500)) {
+    if (!a || typeof a !== 'object') continue;
+    const { tick, type, side, leverage } = a as Record<string, unknown>;
+    if (typeof tick !== 'number' || !Number.isInteger(tick) || tick < 0 || tick > MATCH_TICKS) continue;
+    if (type === 'close') out.push({ tick, type });
+    else if (type === 'open' && (side === 1 || side === -1) && LEVERAGES.includes(leverage as never)) out.push({ tick, type, side, leverage: leverage as number });
+  }
+  return out;
+}
+
+function cleanTick(raw: unknown): number | null {
+  return typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 && raw <= MATCH_TICKS ? raw : null;
+}
+
 type Handler = (ctx: { req: ApiRequest; params: string[]; query: Record<string, string> }) => Promise<unknown> | unknown;
 
 export class MockServer {
@@ -161,7 +186,7 @@ export class MockServer {
     this.wallet = new WalletService(kv);
     this.registerRoutes();
     registerProposalRoutes(this);
-    registerKombatRoutes(this);
+    registerHistoryRoutes(this, registerKombatRoutes(this));
   }
 
   // ------------------------------------------------------------ plumbing
@@ -319,7 +344,7 @@ export class MockServer {
    * Closes a match: what it returned goes back to ABIE at the game's rate.
    * The platform keeps PLATFORM_FEE_PERCENT of a profit and nothing of a loss.
    */
-  private settle(m: MatchRow, place: number, equity: number, abandoned: boolean): MatchFinished {
+  private settle(m: MatchRow, place: number, equity: number, abandoned: boolean, record: Pick<MatchRow, 'actions' | 'endTick'> = {}): MatchFinished {
     const game = this.game(m.game);
     const now = this.now();
     // Matches saved before stakes existed have none.
@@ -353,12 +378,12 @@ export class MockServer {
         });
     const finished: MatchFinished = { matchId: m.id, place, stake, equity, profit, fee, payout, net, tx, profile };
     if (abandoned) finished.abandoned = true;
-    this.db.table<MatchRow>('matches').put(m.id, { ...m, finished });
+    this.db.table<MatchRow>('matches').put(m.id, { ...m, ...record, nickname: p.nickname, finished, finishedAt: now });
     return finished;
   }
 
   /** Matches left without a finish (app closed, phone off) get their stake back. */
-  private settleStale(accountId: string) {
+  settleStale(accountId: string) {
     const deadline = this.now() - MATCH_STALE_MS;
     for (const m of this.db.table<MatchRow>('matches').values()) {
       if (m.accountId === accountId && !m.finished && m.startedAt < deadline) this.settle(m, 4, m.stake ?? 0, true);
@@ -724,7 +749,7 @@ export class MockServer {
       if (typeof equity !== 'number' || !Number.isInteger(equity) || equity < 0 || equity > m.stake * MAX_EQUITY_MULTIPLE) {
         return fail(400, 'invalid_input', 'equity must be a whole number from 0');
       }
-      return this.settle(m, place, equity, false);
+      return this.settle(m, place, equity, false, { actions: cleanActions(body.actions), endTick: cleanTick(body.endTick) });
     });
   }
 

@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { DuelFeed } from '../components/DuelFeed';
 import { PriceChart } from '../components/PriceChart';
 import {
   activeNews,
   applyAction,
   createDuel,
+  DUEL_ME,
+  duelSlots,
   DuelState,
   HISTORY_TICKS,
   Leverage,
@@ -38,15 +41,12 @@ export interface DuelResult {
   equity: number;
   /** What the player did, by match tick; the server will replay it. */
   actions: MatchAction[];
+  /** Tick the player finished on: the bell, or earlier when they left. */
+  endTick: number;
 }
 
-const ME = 'me';
+const ME = DUEL_ME;
 const DUEL = GAMES.find((g) => g.id === 'duel')!;
-const BOTS = [
-  { id: 'b1', name: 'BullRush', style: 'momentum' as const },
-  { id: 'b2', name: 'Contra', style: 'contrarian' as const },
-  { id: 'b3', name: 'Headliner', style: 'newshound' as const },
-];
 const COUNTDOWN_SECONDS = 3;
 
 function resultOf(duel: DuelState, matchId: string, actions: MatchAction[]): DuelResult {
@@ -59,6 +59,7 @@ function resultOf(duel: DuelState, matchId: string, actions: MatchAction[]): Due
     stake: duel.startCash,
     equity: Math.max(0, Math.floor(mine?.equity ?? 0)),
     actions,
+    endTick: duel.tick,
   };
 }
 
@@ -83,9 +84,8 @@ export function DuelScreen({
   const styles = useLookStyles(baseStyles);
   const tp = useType();
   const { colors, t, fmt, profile, haptic, showMoney } = useStore();
-  const [duel, setDuel] = useState<DuelState>(() =>
-    createDuel(seed, [{ id: ME, name: profile?.nickname ?? 'You', isBot: false }, ...BOTS.map((b) => ({ ...b, isBot: true }))], stake),
-  );
+  const nickname = profile?.nickname ?? 'You';
+  const [duel, setDuel] = useState<DuelState>(() => createDuel(seed, duelSlots(nickname), stake));
   const done = useRef(false);
   const actions = useRef<MatchAction[]>([]);
   const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS);
@@ -275,6 +275,10 @@ export function DuelScreen({
         })}
       </View>
 
+      <View style={[styles.feed, { borderColor: colors.line }]}>
+        <DuelFeed log={duel.log} nickname={nickname} limit={3} show={(u) => showMoney(DUEL, u)} compact />
+      </View>
+
       <View style={[styles.positionRow, { borderColor: colors.line }]}>
         {me.position ? (
           <>
@@ -390,6 +394,7 @@ const baseStyles = StyleSheet.create({
   toast: { position: 'absolute', bottom: space.md, alignSelf: 'center', paddingHorizontal: space.lg, paddingVertical: space.sm, borderRadius: radius.pill },
   toastText: { fontSize: 15, fontWeight: '800' },
   board: { borderRadius: radius.md, borderWidth: 1, paddingVertical: 4 },
+  feed: { minHeight: 64, justifyContent: 'center', marginTop: -space.xs },
   boardRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.md, height: 30 },
   place: { width: 14, fontSize: 13, fontWeight: '800' },
   boardName: { flexShrink: 1, fontSize: 14 },

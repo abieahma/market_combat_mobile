@@ -26,7 +26,7 @@ const KIND_LABEL: Record<TxKind, StringKey> = {
   test_grant: 'tx.test_grant',
 };
 
-export function WalletScreen({ onBack }: { onBack: () => void }) {
+export function WalletScreen({ onBack, onHistory }: { onBack: () => void; onHistory: () => void }) {
   const styles = useLookStyles(baseStyles);
   const tp = useType();
   const { colors, t, tf, fmt, balance, refresh } = useStore();
@@ -66,6 +66,8 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
           <Text style={[styles.ticker, { color: colors.goldText }]}>ABIE</Text>
         </View>
       </View>
+
+      <Button variant="glass" label={t('history.games')} onPress={onHistory} />
 
       <SectionLabel>{t('wallet.history')}</SectionLabel>
       <View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.line }]}>

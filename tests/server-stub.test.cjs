@@ -64,7 +64,7 @@ const expectErr = async (p, code) => { try { await p; assert.fail('expected ' + 
   await t('matches: no character, no game', async () => {
     await expectErr(api.matches.start({ game: 'duel', stakeLots: 10, requestId: 'nochar' }), 'conflict');
     await expectErr(api.games.buyCurrency('duel', 1, 'nochar'), 'conflict');
-    await api.me.chooseCharacter('valdberik', 'm');
+    await api.me.chooseCharacter('waldberik', 'm');
   });
 
   await t('duel: stake bought with ABIE, same request = same match, profit back minus 10%, no prizes', async () => {
@@ -133,7 +133,7 @@ const expectErr = async (p, code) => { try { await p; assert.fail('expected ' + 
   await t('universes: a game of another universe cannot be played or bought', async () => {
     await server.dev.publishGame({ id: 'hubquiz', universes: ['ozonik'], currency: { code: 'HQ', rate: { abie: 2, units: 5 }, settle: 'none' }, publishedAt: Date.now() });
     const ids = (await api.games.list()).items.map((g) => g.id);
-    assert.deepEqual(ids, ['duel', 'hubquiz']);
+    assert.deepEqual(ids.sort(), ['duel', 'hubquiz', 'kombat']);
     await expectErr(api.matches.start({ game: 'hubquiz', stakeLots: 1, requestId: 'q1' }), 'forbidden');
     await expectErr(api.games.buyCurrency('hubquiz', 1, 'q1'), 'forbidden');
     await expectErr(api.games.buyCurrency('nope', 1, 'q1'), 'not_found');
@@ -215,7 +215,7 @@ const expectErr = async (p, code) => { try { await p; assert.fail('expected ' + 
     const c = createApi(new MockTransport(server, () => sim));
     const res = await c.auth.google(makeMockGoogleToken({ sub: 'g-char', email: 'char@gmail.com', name: 'C' }));
     c.setToken(res.session.token);
-    assert.deepEqual(res.profile.skins, ['valdberik', 'ozonik', 'avitos', 'yandos']);
+    assert.deepEqual(res.profile.skins, ['waldberik', 'ozonik', 'avitos', 'yandos']);
     assert.equal(res.profile.character, null);
     await expectErr(c.me.changeGender('f'), 'conflict');
     await expectErr(c.me.chooseCharacter('nope', 'm'), 'invalid_input');

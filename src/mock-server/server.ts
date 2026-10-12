@@ -7,11 +7,13 @@ import {
   CHARACTER_CHANGE_COST,
   CHARACTER_IDS,
   CharacterId,
+  currentCharacterId,
   FREE_SKINS,
   Gender,
   GENDER_CHANGE_COOLDOWN_MS,
   NICKNAME_MAX,
   NICKNAME_MIN,
+  ENTRY_FEE_PERCENT,
   PLATFORM_ACCOUNT,
   PLATFORM_FEE_PERCENT,
 } from '../api/contract';
@@ -22,7 +24,7 @@ import type {
   ChallengeStarted,
   ChallengeStatus,
   CurrencyBuyResult,
-  ErrorCode,
+  EntryResult,
   GameCurrencyBalance,
   GameEntry,
   GameId,
@@ -32,6 +34,8 @@ import type {
   MatchFinishRequest,
   MatchStarted,
   Profile,
+  Proposal,
+  ProposalStatus,
   WalletTx,
   WalletView,
 } from '../api/contract';
@@ -39,7 +43,10 @@ import type { ApiRequest, ApiResponse } from '../api/transport';
 import { MATCH_SECONDS } from '../game/duel';
 import { emptyLedger, LedgerState, post, WELCOME_BONUS } from '../wallet/ledger';
 import { Database, KeyValue } from './db';
-import { gameEntryProblem, PUBLISHED_GAMES } from './games';
+import { fail, randomId, ServerError } from './errors';
+import { gameEntryProblem, normalizeGame, PUBLISHED_GAMES } from './games';
+import { registerKombatRoutes } from './kombat';
+import { moderate, registerProposalRoutes } from './proposals';
 import { WalletError, WalletService } from './wallet-service';
 
 export const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
@@ -84,7 +91,7 @@ interface MatchRow {
 }
 
 /** Game currency ledger kinds: bought, put into a match, returned by a match, turned back into ABIE. */
-type CurrencyKind = 'buy' | 'stake' | 'settle' | 'convert';
+export type CurrencyKind = 'buy' | 'stake' | 'settle' | 'convert';
 
 /** Messages "delivered" to the player outside the game. */
 export interface InboxMessage {
@@ -96,26 +103,7 @@ export interface InboxMessage {
   code: string;
 }
 
-export class ServerError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: ErrorCode,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-const fail = (status: number, code: ErrorCode, message: string): never => {
-  throw new ServerError(status, code, message);
-};
-
-function randomId(prefix: string, length = 16): string {
-  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let s = '';
-  for (let i = 0; i < length; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return `${prefix}_${s}`;
-}
+export { ServerError, fail, randomId };
 
 function sixDigits(): string {
   return String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
@@ -140,23 +128,41 @@ export function maskPhone(e164: string): string {
 type Handler = (ctx: { req: ApiRequest; params: string[]; query: Record<string, string> }) => Promise<unknown> | unknown;
 
 export class MockServer {
-  private readonly db: Database;
+  /** Game server database. Route modules (proposals, kombat) use it too. */
+  readonly db: Database;
   private readonly devDb: Database;
   readonly wallet: WalletService;
   private readonly routes: { method: string; pattern: RegExp; handler: Handler }[] = [];
   private readonly inboxListeners = new Set<(m: InboxMessage) => void>();
   now: () => number = () => Date.now();
+  /** Switches of the developer panel that change how the stub behaves. */
+  devSettings = { sparring: false };
 
   constructor(kv: KeyValue) {
-    this.db = new Database(kv, 'game', ['accounts', 'identities', 'sessions', 'profiles', 'challenges', 'matches', 'games', 'currency']);
+    this.db = new Database(kv, 'game', [
+      'accounts',
+      'identities',
+      'sessions',
+      'profiles',
+      'challenges',
+      'matches',
+      'games',
+      'currency',
+      'entries',
+      'proposals',
+      'fights',
+      'boosts',
+    ]);
     this.devDb = new Database(kv, 'outside', ['inbox']);
     this.wallet = new WalletService(kv);
     this.registerRoutes();
+    registerProposalRoutes(this);
+    registerKombatRoutes(this);
   }
 
   // ------------------------------------------------------------ plumbing
 
-  private route(method: string, path: string, handler: Handler) {
+  route(method: string, path: string, handler: Handler) {
     const pattern = new RegExp('^' + path.replace(/\{[^}]+\}/g, '([^/]+)') + '$');
     this.routes.push({ method, pattern, handler });
   }
@@ -199,7 +205,7 @@ export class MockServer {
     }
   }
 
-  private accountIdFor(req: ApiRequest): string {
+  accountIdFor(req: ApiRequest): string {
     if (!req.token) return fail(401, 'unauthorized', 'Sign in first');
     const s = this.db.table<SessionRow>('sessions').get(req.token);
     if (!s || s.expiresAt < this.now()) return fail(401, 'unauthorized', 'Session expired, sign in again');
@@ -208,49 +214,73 @@ export class MockServer {
 
   // ------------------------------------------------------------- accounts
 
-  private profile(accountId: string): Profile {
+  profile(accountId: string): Profile {
     const p = this.db.table<Profile>('profiles').get(accountId);
     if (!p) return fail(404, 'not_found', 'No profile');
-    // Profiles saved before skins existed own the free ones.
-    return Array.isArray(p.skins) ? p : { ...p, skins: [...FREE_SKINS] };
+    // Profiles saved before skins existed own the free ones; old character ids read as the new ones.
+    const skins = Array.isArray(p.skins) ? p.skins.map((s) => currentCharacterId(s) ?? s) : [...FREE_SKINS];
+    return { ...p, character: currentCharacterId(p.character), skins };
   }
 
-  private saveProfile(p: Profile): Profile {
+  saveProfile(p: Profile): Profile {
     return this.db.table<Profile>('profiles').put(p.accountId, { ...p });
   }
 
-  private account(accountId: string): Account {
+  account(accountId: string): Account {
     const a = this.db.table<AccountRow>('accounts').get(accountId);
     return a ?? fail(404, 'not_found', 'No account');
   }
 
   // ------------------------------------------------- games and currencies
 
-  private game(id: unknown): GameEntry {
+  game(id: unknown): GameEntry {
     const g = typeof id === 'string' ? this.db.table<GameEntry>('games').get(id) : undefined;
-    return g ?? fail(404, 'not_found', 'Unknown game');
+    return g ? normalizeGame(g) : fail(404, 'not_found', 'Unknown game');
   }
 
-  /** The game must be in the universe of the player's character. */
-  private playable(accountId: string, game: GameEntry): Profile {
+  /**
+   * Puts a game into the registry. Allowed once per game id: after that the
+   * entry, its universes, rate, entry price and author share never change.
+   */
+  publish(entry: GameEntry): GameEntry {
+    const problem = gameEntryProblem(entry);
+    if (problem) return fail(400, 'invalid_input', problem);
+    const registry = this.db.table<GameEntry>('games');
+    if (registry.get(entry.id)) return fail(409, 'conflict', 'This game is already published; its rate never changes');
+    return registry.put(entry.id, normalizeGame({ ...entry }));
+  }
+
+  /** True when the player has paid the entry of this game (or it is free). */
+  opened(accountId: string, game: GameEntry): boolean {
+    return game.entry.kind === 'free' || !!this.db.table<unknown>('entries').get(`${accountId}:${game.id}`);
+  }
+
+  /** The game must be in the universe of the player's character and, if paid, opened. */
+  playable(accountId: string, game: GameEntry): Profile {
     const p = this.profile(accountId);
     if (!p.character) return fail(409, 'conflict', 'Choose a character first');
     if (game.universes !== 'all' && !game.universes.includes(p.character)) return fail(403, 'forbidden', 'This game is not in your universe');
+    if (!this.opened(accountId, game)) return fail(402, 'payment_required', 'Pay the entry of this game first');
     return p;
   }
 
-  private currencyLedger(accountId: string, game: GameId): LedgerState<CurrencyKind> {
+  /** ABIE for the author of a game; nothing for the platform's own games. */
+  private authorPart(game: GameEntry, amount: number, percent: number): number {
+    return game.author ? Math.floor((amount * percent) / 100) : 0;
+  }
+
+  currencyLedger(accountId: string, game: GameId): LedgerState<CurrencyKind> {
     return this.db.table<LedgerState<CurrencyKind>>('currency').get(`${accountId}:${game}`) ?? emptyLedger<CurrencyKind>();
   }
 
-  private currencyPost(accountId: string, game: GameId, req: { id: string; kind: CurrencyKind; amount: number; ref?: string }) {
+  currencyPost(accountId: string, game: GameId, req: { id: string; kind: CurrencyKind; amount: number; ref?: string }) {
     const res = post(this.currencyLedger(accountId, game), req, this.now());
     if (!res.ok) return fail(409, res.error === 'insufficient_funds' ? 'insufficient_funds' : 'invalid_input', 'Game currency operation refused');
     if (!res.duplicate) this.db.table<LedgerState<CurrencyKind>>('currency').put(`${accountId}:${game}`, res.state);
     return res.tx;
   }
 
-  private currencyBalance(accountId: string, game: GameEntry): GameCurrencyBalance {
+  currencyBalance(accountId: string, game: GameEntry): GameCurrencyBalance {
     return { game: game.id, code: game.currency!.code, balance: this.currencyLedger(accountId, game.id).balance };
   }
 
@@ -259,11 +289,15 @@ export class MockServer {
    * the platform account, the currency arrives. Every part has an id derived
    * from `key`, so a repeat changes nothing.
    */
-  private buyCurrency(accountId: string, game: GameEntry, lots: number, key: string): WalletTx {
+  buyCurrency(accountId: string, game: GameEntry, lots: number, key: string): WalletTx {
     const { abie, units } = game.currency!.rate;
     const now = this.now();
-    const tx = this.wallet.post(accountId, { id: `buy:${game.id}:${key}`, kind: 'currency_buy', amount: -lots * abie, ref: game.id }, now);
-    this.wallet.post(PLATFORM_ACCOUNT, { id: `sale:${accountId}:${game.id}:${key}`, kind: 'currency_sale', amount: lots * abie, ref: accountId }, now);
+    const cost = lots * abie;
+    const tx = this.wallet.post(accountId, { id: `buy:${game.id}:${key}`, kind: 'currency_buy', amount: -cost, ref: game.id }, now);
+    // The author of the game gets their share of the purchase; the platform the rest.
+    const toAuthor = this.authorPart(game, cost, game.authorShare);
+    if (toAuthor > 0) this.wallet.post(game.author!.accountId, { id: `share:${accountId}:${game.id}:${key}`, kind: 'author_share', amount: toAuthor, ref: game.id }, now);
+    if (cost - toAuthor > 0) this.wallet.post(PLATFORM_ACCOUNT, { id: `sale:${accountId}:${game.id}:${key}`, kind: 'currency_sale', amount: cost - toAuthor, ref: accountId }, now);
     this.currencyPost(accountId, game.id, { id: `buy:${key}`, kind: 'buy', amount: lots * units, ref: tx.id });
     return tx;
   }
@@ -503,8 +537,36 @@ export class MockServer {
 
     // Games and their currencies. There is no route that changes a published game.
     this.route('GET', '/v1/games', ({ req }): GameList => {
-      this.accountIdFor(req);
-      return { items: this.db.table<GameEntry>('games').values().sort((a, b) => a.publishedAt - b.publishedAt) };
+      const accountId = this.accountIdFor(req);
+      const items = this.db
+        .table<GameEntry>('games')
+        .values()
+        .map(normalizeGame)
+        .sort((a, b) => a.publishedAt - b.publishedAt);
+      return { items, opened: items.filter((g) => g.entry.kind === 'paid' && this.opened(accountId, g)).map((g) => g.id) };
+    });
+
+    // A paid game is opened once: ENTRY_FEE_PERCENT to the platform, the rest to the author.
+    this.route('POST', '/v1/games/{id}/entry', ({ req, params }): EntryResult => {
+      const accountId = this.accountIdFor(req);
+      const game = this.game(params[0]);
+      const requestId = (req.body as { requestId?: unknown })?.requestId;
+      if (typeof requestId !== 'string' || !requestId) return fail(400, 'invalid_input', 'requestId is required');
+      const entries = this.db.table<{ tx: WalletTx | null; at: number }>('entries');
+      const key = `${accountId}:${game.id}`;
+      const had = entries.get(key);
+      if (had) return { game: game.id, tx: had.tx };
+      if (game.entry.kind === 'free') return { game: game.id, tx: null };
+      const price = game.entry.price;
+      const now = this.now();
+      const tx = this.wallet.post(accountId, { id: `entry:${game.id}:${accountId}`, kind: 'entry_buy', amount: -price, ref: game.id }, now);
+      const fee = game.author ? Math.ceil((price * ENTRY_FEE_PERCENT) / 100) : price;
+      this.wallet.post(PLATFORM_ACCOUNT, { id: `entryfee:${game.id}:${accountId}`, kind: 'entry_fee', amount: fee, ref: accountId }, now);
+      if (price - fee > 0) {
+        this.wallet.post(game.author!.accountId, { id: `entryincome:${game.id}:${accountId}`, kind: 'entry_income', amount: price - fee, ref: game.id }, now);
+      }
+      entries.put(key, { tx, at: now });
+      return { game: game.id, tx };
     });
 
     this.route('GET', '/v1/games/{id}/currency', ({ req, params }): GameCurrencyBalance => {
@@ -642,13 +704,24 @@ export class MockServer {
      * Publishes a game on the platform. Allowed once per game id: after that
      * the entry, its universes and its currency rate never change.
      */
+    /** Every proposal on the server, newest first (the moderator's view). */
+    proposals: async (): Promise<Proposal[]> => {
+      await this.openAll();
+      return this.db
+        .table<Proposal>('proposals')
+        .values()
+        .sort((a, b) => b.updatedAt - a.updatedAt);
+    },
+    /** The moderator's answer to a proposal; 'approved' publishes the game. */
+    moderate: async (id: string, status: Exclude<ProposalStatus, 'review'>, message?: string): Promise<Proposal> => {
+      await this.openAll();
+      const p = moderate(this, id, status, message);
+      await this.db.flush();
+      return p;
+    },
     publishGame: async (entry: GameEntry) => {
       await this.openAll();
-      const problem = gameEntryProblem(entry);
-      if (problem) throw new ServerError(400, 'invalid_input', problem);
-      const registry = this.db.table<GameEntry>('games');
-      if (registry.get(entry.id)) throw new ServerError(409, 'conflict', 'This game is already published; its rate never changes');
-      registry.put(entry.id, { ...entry });
+      this.publish(entry);
       await this.db.flush();
     },
   };

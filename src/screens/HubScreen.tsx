@@ -10,16 +10,23 @@ import { ClockIcon, SlidersIcon, UsersIcon } from '../ui/icons';
 import { Button } from '../ui/kit';
 import { Glass, LiftPressable, ShinyCoin, useCountUp } from '../ui/luxe';
 import { fonts, radius, space, type } from '../ui/theme';
+import { CHARACTER_IDS } from '../api/contract';
 import { characterName, CHARACTERS, worldColor } from '../world/characters';
 
 export function HubScreen({
   onPlay,
   onChoose,
+  onPayEntry,
+  onPropose,
   onSettings,
   onWallet,
   starting,
 }: {
   onPlay: (game: ShownGame) => void;
+  /** Opens a paid game (one payment). */
+  onPayEntry: (game: ShownGame) => void;
+  /** Proposals of new games. */
+  onPropose: () => void;
   /** Opens the character choice (needed before any game). */
   onChoose: () => void;
   onSettings: () => void;
@@ -27,11 +34,11 @@ export function HubScreen({
   /** A match is being opened on the server. */
   starting: boolean;
 }) {
-  const { colors, t, profile, fmt, haptic, balance, scheme, settings, games } = useStore();
+  const { colors, t, tf, profile, fmt, haptic, balance, scheme, settings, games, opened } = useStore();
   const brand = scheme === 'dark' ? colors.goldHi : colors.gold;
   const character = profile?.character ?? null;
   const world = character ? CHARACTERS[character] : null;
-  const shown = shownGames(games, character);
+  const shown = shownGames(games, character, opened);
   const stats = profile?.stats ?? { matches: 0, wins: 0, earned: 0 };
   const shownBalance = useCountUp(balance);
 
@@ -123,15 +130,22 @@ export function HubScreen({
         <GameTile
           key={g.info.id}
           game={g}
-          onPress={() => (g.playable ? onPlay(g) : onChoose())}
+          onPress={() => (!g.playable ? onChoose() : g.needsEntry ? onPayEntry(g) : onPlay(g))}
           starting={starting}
-          playLabel={g.playable ? t(world ? world.text.play : 'hub.play') : t('hub.choose')}
+          playLabel={
+            !g.playable
+              ? t('hub.choose')
+              : g.needsEntry && g.entry?.entry.kind === 'paid'
+                ? tf('entry.pay', { price: fmt(g.entry.entry.price) })
+                : t(world ? world.text.play : 'hub.play')
+          }
         />
       ))}
 
       <Glass quiet style={styles.soon}>
         <Text style={[styles.soonTitle, { color: colors.text }]}>{t('hub.soonTitle')}</Text>
-        <Text style={[type.body, { color: colors.muted }]}>{t('hub.soonText')}</Text>
+        <Text style={[type.body, { color: colors.muted }]}>{t('prop.lead')}</Text>
+        <Button label={t('prop.title')} onPress={onPropose} variant="glass" style={styles.soonButton} />
       </Glass>
     </ScrollView>
   );
@@ -145,6 +159,21 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
       <Text style={[styles.statLabel, { color: colors.muted }]} numberOfLines={1}>
         {label}
       </Text>
+    </View>
+  );
+}
+
+/** Two fighters of the universes facing each other, for the Market Kombat window. */
+function KombatVignette({ width, height }: { width: number; height: number }) {
+  const { colors, profile } = useStore();
+  const mine = profile?.character ?? 'waldberik';
+  const rival = CHARACTER_IDS[(CHARACTER_IDS.indexOf(mine) + 2) % CHARACTER_IDS.length];
+  const size = Math.min(104, height - 16);
+  return (
+    <View style={[styles.versus, { width, height }]}>
+      <Avatar character={mine} gender={profile?.gender ?? 'm'} size={size} />
+      <Text style={[styles.vs, { color: colors.goldHi }]}>VS</Text>
+      <Avatar character={rival} gender="m" size={size} />
     </View>
   );
 }
@@ -197,7 +226,7 @@ function GameTile({ game: shown, onPress, starting, playLabel }: { game: ShownGa
     <LiftPressable onPress={onPress} disabled={starting || !shown.entry} accessibilityLabel={t(game.title)}>
       <Glass style={[styles.tile, inactive && { opacity: 0.55 }]}>
         <View style={styles.vignette} onLayout={(e) => setWidth(Math.round(e.nativeEvent.layout.width))}>
-          {width > 0 && <ChartVignette width={width} height={128} />}
+          {width > 0 && (game.id === 'kombat' ? <KombatVignette width={width} height={128} /> : <ChartVignette width={width} height={128} />)}
         </View>
         <View style={styles.tileBody}>
           <Text style={[styles.tileTitle, { color: colors.text }]} numberOfLines={2}>
@@ -209,12 +238,14 @@ function GameTile({ game: shown, onPress, starting, playLabel }: { game: ShownGa
               <UsersIcon color={colors.gold} />
               <Text style={[styles.metaText, { color: colors.text }]}>{game.players}</Text>
             </View>
-            <View style={styles.metaItem}>
-              <ClockIcon color={colors.gold} />
-              <Text style={[styles.metaText, { color: colors.text }]}>
-                {game.seconds} {t('unit.sec')}
-              </Text>
-            </View>
+            {game.seconds !== null && (
+              <View style={styles.metaItem}>
+                <ClockIcon color={colors.gold} />
+                <Text style={[styles.metaText, { color: colors.text }]}>
+                  {game.seconds} {t('unit.sec')}
+                </Text>
+              </View>
+            )}
             {game.offline && (
               <View style={[styles.tag, { borderColor: colors.glassEdge }]}>
                 <Text style={[styles.tagText, { color: colors.muted }]}>{t('hub.vsBots')}</Text>
@@ -266,6 +297,9 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 14, fontWeight: '700' },
   tag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1 },
   tagText: { fontSize: 12, fontWeight: '600' },
-  soon: { padding: 20, gap: 6 },
+  soon: { padding: 20, gap: 8 },
+  soonButton: { marginTop: 6 },
+  versus: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 18 },
+  vs: { fontFamily: fonts.display, fontSize: 40, letterSpacing: 1 },
   soonTitle: { fontFamily: fonts.displaySemi, fontSize: 20 },
 });

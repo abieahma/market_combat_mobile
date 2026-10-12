@@ -8,7 +8,16 @@ import type {
   ChallengeStarted,
   ChallengeStatus,
   CurrencyBuyResult,
+  EntryResult,
   ErrorCode,
+  KombatBoost,
+  KombatBoostPackId,
+  KombatMode,
+  KombatMove,
+  KombatView,
+  Offer,
+  Proposal,
+  ProposalDraft,
   GameCurrencyBalance,
   GameId,
   GameList,
@@ -21,6 +30,7 @@ import type {
   Profile,
   ProfilePatch,
   TxPage,
+  WalletTx,
   WalletView,
 } from './contract';
 import { ApiError, ApiRequest, Method, Transport } from './transport';
@@ -51,6 +61,24 @@ export interface ApiClient {
     list(): Promise<GameList>;
     currency(game: GameId): Promise<GameCurrencyBalance>;
     buyCurrency(game: GameId, lots: number, requestId: string): Promise<CurrencyBuyResult>;
+    /** Pays the entry of a paid game once. */
+    payEntry(game: GameId, requestId: string): Promise<EntryResult>;
+  };
+  proposals: {
+    offer(lang: string): Promise<Offer>;
+    create(draft: ProposalDraft, offerVersion: string, requestId: string): Promise<Proposal>;
+    list(): Promise<{ items: Proposal[] }>;
+    get(id: string): Promise<Proposal>;
+    message(id: string, text: string): Promise<Proposal>;
+    update(id: string, draft: ProposalDraft): Promise<Proposal>;
+  };
+  kombat: {
+    start(mode: KombatMode, stakeLots: number | undefined, requestId: string): Promise<KombatView>;
+    get(id: string): Promise<KombatView>;
+    move(id: string, turn: number, move: KombatMove): Promise<KombatView>;
+    leave(id: string): Promise<KombatView>;
+    boost(): Promise<KombatBoost>;
+    buyBoost(pack: KombatBoostPackId, requestId: string): Promise<{ tx: WalletTx; boost: KombatBoost }>;
   };
   matches: {
     start(req: MatchStartRequest): Promise<MatchStarted>;
@@ -104,6 +132,23 @@ export function createApi(transport: Transport): ApiClient {
       list: () => call('GET', '/v1/games'),
       currency: (game) => call('GET', `/v1/games/${encodeURIComponent(game)}/currency`),
       buyCurrency: (game, lots, requestId) => call('POST', `/v1/games/${encodeURIComponent(game)}/currency/buy`, { lots, requestId }),
+      payEntry: (game, requestId) => call('POST', `/v1/games/${encodeURIComponent(game)}/entry`, { requestId }),
+    },
+    proposals: {
+      offer: (lang) => call('GET', `/v1/offer?lang=${encodeURIComponent(lang)}`),
+      create: (draft, offerVersion, requestId) => call('POST', '/v1/proposals', { ...draft, offerVersion, requestId }),
+      list: () => call('GET', '/v1/proposals'),
+      get: (id) => call('GET', `/v1/proposals/${encodeURIComponent(id)}`),
+      message: (id, text) => call('POST', `/v1/proposals/${encodeURIComponent(id)}/messages`, { text }),
+      update: (id, draft) => call('PUT', `/v1/proposals/${encodeURIComponent(id)}`, draft),
+    },
+    kombat: {
+      start: (mode, stakeLots, requestId) => call('POST', '/v1/kombat/fights', { mode, stakeLots, requestId }),
+      get: (id) => call('GET', `/v1/kombat/fights/${encodeURIComponent(id)}`),
+      move: (id, turn, move) => call('POST', `/v1/kombat/fights/${encodeURIComponent(id)}/move`, { turn, move }),
+      leave: (id) => call('POST', `/v1/kombat/fights/${encodeURIComponent(id)}/leave`),
+      boost: () => call('GET', '/v1/kombat/boost'),
+      buyBoost: (pack, requestId) => call('POST', '/v1/kombat/boost', { pack, requestId }),
     },
     matches: {
       start: (req) => call('POST', '/v1/matches', req),

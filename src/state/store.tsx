@@ -9,6 +9,7 @@ import * as Haptics from 'expo-haptics';
 import { createContext, ReactNode, useCallback, useEffect, useMemo, useRef, useState, useContext } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 import { ApiClient, createApi } from '../api/client';
+import { currentCharacterId } from '../api/contract';
 import type { Account, AuthResult, CharacterId, GameEntry, GameId, Gender, MatchAction, MatchFinished, MatchStarted, Profile } from '../api/contract';
 import { isApiError } from '../api/transport';
 import { DEFAULT_LANG, fill, formatNumber, isLangCode, LangCode, STRINGS, StringKey } from '../i18n/strings';
@@ -22,6 +23,7 @@ const KEYS = {
   session: 'mcombat.session',
   cache: 'mcombat.cache',
   net: 'mcombat.net',
+  dev: 'mcombat.dev',
   legacy: 'mcombat.v1',
 };
 
@@ -37,6 +39,8 @@ interface Cache {
   balance: number;
   /** Games published on the platform, as the server last listed them. */
   games?: GameEntry[];
+  /** Paid games this player has opened. */
+  opened?: string[];
 }
 
 export type AuthStatus = 'loading' | 'signedOut' | 'signedIn';
@@ -77,7 +81,8 @@ function sanitizeSettings(raw: unknown): Settings {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-function requestId(): string {
+/** A fresh key for a request that must not be applied twice. */
+export function requestId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 }
 
@@ -118,6 +123,7 @@ interface StoreValue {
   setNickname: (name: string) => Promise<void>;
   /** Games on the platform (all of them; the hub picks the ones of the player's universe). */
   games: GameEntry[];
+  opened: string[];
   /** Opens a match; for a game with a currency the stake is bought from ABIE in the same step. */
   startMatch: (game: GameId, stakeLots: number) => Promise<MatchStarted>;
   finishMatch: (matchId: string, place: number, equity: number, actions: MatchAction[]) => Promise<MatchFinished>;
@@ -127,6 +133,9 @@ interface StoreValue {
 
   net: NetworkSim;
   setNet: (patch: Partial<NetworkSim>) => void;
+  /** Developer panel: a test opponent joins fights against players. */
+  sparring: boolean;
+  setSparring: (on: boolean) => void;
   resetServer: () => Promise<void>;
 
   toast: string | null;
@@ -140,6 +149,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [cache, setCache] = useState<Cache | null>(null);
   const [net, setNetState] = useState<NetworkSim>(DEFAULT_NET);
+  const [sparring, setSparringState] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const systemScheme = useColorScheme();
@@ -168,7 +178,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const [me, wallet, games] = await Promise.all([api.me.get(), api.wallet.get(), api.games.list()]);
-      saveCache({ account: me.account, profile: me.profile, balance: wallet.balance, games: games.items });
+      saveCache({ account: me.account, profile: me.profile, balance: wallet.balance, games: games.items, opened: games.opened });
     } catch (e) {
       if (isApiError(e) && e.code === 'unauthorized') signOutLocally();
       // Network trouble: keep showing the cached copy.
@@ -181,6 +191,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const storedSettings = await readJson<Settings>(KEYS.settings);
       const legacy = storedSettings ? null : await readJson<{ settings?: unknown }>(KEYS.legacy);
       setSettings(sanitizeSettings(storedSettings ?? legacy?.settings));
+
+      const storedDev = await readJson<{ sparring?: boolean }>(KEYS.dev);
+      if (storedDev?.sparring) {
+        server.devSettings.sparring = true;
+        setSparringState(true);
+      }
 
       const storedNet = await readJson<NetworkSim>(KEYS.net);
       if (storedNet) {
@@ -199,7 +215,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return;
       }
       api.setToken(token);
-      const cached = await readJson<Cache>(KEYS.cache);
+      const stored = await readJson<Cache>(KEYS.cache);
+      // Copies saved with an old character id read as the new one.
+      const cached = stored ? { ...stored, profile: { ...stored.profile, character: currentCharacterId(stored.profile.character) } } : null;
       if (cached) {
         setCache(cached);
         setStatus('signedIn');
@@ -207,7 +225,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       } else {
         try {
           const [me, wallet, games] = await Promise.all([api.me.get(), api.wallet.get(), api.games.list()]);
-          saveCache({ account: me.account, profile: me.profile, balance: wallet.balance, games: games.items });
+          saveCache({ account: me.account, profile: me.profile, balance: wallet.balance, games: games.items, opened: games.opened });
           setStatus('signedIn');
         } catch {
           signOutLocally();
@@ -273,7 +291,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       completeSignIn: (result) => {
         api.setToken(result.session.token);
         AsyncStorage.setItem(KEYS.session, result.session.token).catch(() => {});
-        saveCache({ account: result.account, profile: result.profile, balance: cache?.balance ?? 0, games: cache?.games });
+        saveCache({ account: result.account, profile: result.profile, balance: cache?.balance ?? 0, games: cache?.games, opened: [] });
         setStatus('signedIn');
         refresh();
       },
@@ -291,6 +309,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         updateCache((c) => ({ ...c, profile }));
       },
       games: cache?.games ?? [],
+      opened: cache?.opened ?? [],
       startMatch: async (game, stakeLots) => {
         // One id per tap: a repeat after a lost answer opens the same match and charges once.
         const id = requestId();
@@ -327,6 +346,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setNetState(netSim);
         writeJson(KEYS.net, netSim);
       },
+      sparring,
+      setSparring: (on) => {
+        server.devSettings.sparring = on;
+        setSparringState(on);
+        writeJson(KEYS.dev, { sparring: on });
+      },
       resetServer: async () => {
         await server.dev.reset();
         signOutLocally();
@@ -335,7 +360,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toast,
       notify,
     };
-  }, [status, settings, scheme, haptic, cache, refresh, saveCache, updateCache, signOutLocally, updateSettings, net, toast, notify]);
+  }, [status, settings, scheme, haptic, cache, refresh, saveCache, updateCache, signOutLocally, updateSettings, net, sparring, toast, notify]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "export:web": "expo export --platform web --output-dir dist",
     "preview": "npm run export:web && node scripts/make-preview.mjs dist preview",
-    "test:stub": "tsc -p tsconfig.stub.json && node tests/server-stub.test.cjs"
+    "test:stub": "tsc -p tsconfig.stub.json && node tests/server-stub.test.cjs && node tests/games-stub.test.cjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.16",

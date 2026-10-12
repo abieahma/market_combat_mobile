@@ -11,7 +11,7 @@ export type SettleState = { state: 'saving' } | { state: 'done'; res: MatchFinis
 export function ResultScreen({
   result,
   settle,
-  sign,
+  money: show,
   onRetry,
   onAgain,
   onHub,
@@ -19,8 +19,8 @@ export function ResultScreen({
 }: {
   result: DuelResult;
   settle: SettleState;
-  /** Sign of the game currency, e.g. $. */
-  sign: string;
+  /** Shows an amount of the game currency: $1,000. */
+  money: (formatted: string) => string;
   onRetry: () => void;
   onAgain: () => void;
   onHub: () => void;
@@ -28,7 +28,7 @@ export function ResultScreen({
 }) {
   const { colors, t, fmt } = useStore();
   const won = result.myPlace === 1;
-  const money = (v: number, signed = false) => `${signed && v > 0 ? '+' : v < 0 ? '−' : ''}${sign}${fmt(Math.abs(v))}`;
+  const money = (v: number, signed = false) => `${signed && v > 0 ? '+' : v < 0 ? '−' : ''}${show(fmt(Math.abs(v)))}`;
   const res = settle.state === 'done' ? settle.res : null;
   const pnl = result.equity - result.stake;
 

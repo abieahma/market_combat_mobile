@@ -23,7 +23,7 @@ export function CharacterScreen({ mode, onBack }: { mode: 'choose' | 'change'; o
   const { colors, t, tf, fmt, settings, scheme, profile, balance, chooseCharacter, changeCharacter, refresh, notify, haptic } = useStore();
   const current = profile?.character ?? null;
   const [gender, setGender] = useState<Gender>(profile?.gender ?? 'm');
-  const [picked, setPicked] = useState<CharacterId>(mode === 'change' && current ? current : 'valdberik');
+  const [picked, setPicked] = useState<CharacterId>(mode === 'change' && current ? current : 'waldberik');
   const [gridWidth, setGridWidth] = useState(0);
   const [busy, setBusy] = useState(false);
   const [armed, setArmed] = useState(false);

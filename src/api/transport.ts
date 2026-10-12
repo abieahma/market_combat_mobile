@@ -3,7 +3,7 @@
 
 import type { ErrorCode } from './contract';
 
-export type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface ApiRequest {
   method: Method;

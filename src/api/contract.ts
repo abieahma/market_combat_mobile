@@ -11,8 +11,17 @@
 
 // ------------------------------------------------------------------ common
 
-export const CHARACTER_IDS = ['valdberik', 'ozonik', 'avitos', 'yandos'] as const;
+export const CHARACTER_IDS = ['waldberik', 'ozonik', 'avitos', 'yandos'] as const;
 export type CharacterId = (typeof CHARACTER_IDS)[number];
+/** Ids used before a rename; data saved with them is read as the new id. */
+export const OLD_CHARACTER_IDS: Record<string, CharacterId> = { valdberik: 'waldberik' };
+
+/** The current id for a character id read from stored data. */
+export function currentCharacterId(id: string | null | undefined): CharacterId | null {
+  if (!id) return null;
+  if ((CHARACTER_IDS as readonly string[]).includes(id)) return id as CharacterId;
+  return OLD_CHARACTER_IDS[id] ?? null;
+}
 export type Gender = 'm' | 'f';
 /** A skin the player owns. The 4 base skins are the free characters. */
 export type SkinId = string;
@@ -33,6 +42,7 @@ export type ErrorCode =
   | 'insufficient_funds'
   | 'rate_limited'
   | 'conflict'
+  | 'payment_required'
   | 'network'
   | 'internal';
 
@@ -175,6 +185,10 @@ export interface ChangeGenderRequest {
  * - currency_buy: ABIE paid for a game currency (player side)
  * - currency_return: game currency turned back into ABIE after a match (player side)
  * - currency_sale / currency_payout: the same two, seen from the platform account
+ * - entry_buy: a paid game opened by the player; entry_fee: the platform's 10%
+ *   of it; entry_income: the rest, paid to the game's author
+ * - author_share: the author's share of a currency purchase in their game
+ * - kombat_boost: a pack of energy boosts for Market Kombat
  */
 export type TxKind =
   | 'welcome'
@@ -183,7 +197,12 @@ export type TxKind =
   | 'currency_buy'
   | 'currency_return'
   | 'currency_sale'
-  | 'currency_payout';
+  | 'currency_payout'
+  | 'entry_buy'
+  | 'entry_fee'
+  | 'entry_income'
+  | 'author_share'
+  | 'kombat_boost';
 
 export interface WalletTx {
   /** Unique operation id; posting the same id again changes nothing. */
@@ -218,6 +237,8 @@ export type GameId = string;
 export const PLATFORM_ACCOUNT = 'platform';
 /** Share of a player's profit the platform keeps when a game currency goes back to ABIE. */
 export const PLATFORM_FEE_PERCENT = 10;
+/** Share of each paid game entry the platform keeps; the rest goes to the game's author. */
+export const ENTRY_FEE_PERCENT = 10;
 
 /** `abie` ABIE buy `units` of the game currency. Whole numbers only. */
 export interface CurrencyRate {
@@ -240,22 +261,48 @@ export interface GameCurrency {
   settle: 'match' | 'none';
 }
 
+/** How a player gets into a game: free, or a one-time payment in ABIE that opens it for good. */
+export type GameEntryFee = { kind: 'free' } | { kind: 'paid'; price: number };
+
 /**
  * A game on the platform. Everything here is set when the game is published
  * and is never changed afterwards; there is no route to change it.
  */
 export interface GameEntry {
   id: GameId;
+  /** Title of a game proposed by an author; the platform's own games are named in the app. */
+  title?: string;
   /** Universes (characters) the game appears in; 'all' means a common game. */
   universes: CharacterId[] | 'all';
   /** The game's own currency, bought only with ABIE; null if it has none. */
   currency: GameCurrency | null;
+  entry: GameEntryFee;
+  /** Author of the idea; null for the platform's own games. */
+  author: { accountId: string; nickname: string } | null;
+  /** Percent of every currency purchase in this game paid to the author. */
+  authorShare: number;
   publishedAt: number;
 }
 
 /** GET /v1/games */
 export interface GameList {
   items: GameEntry[];
+  /** Paid games this player has already opened. */
+  opened: GameId[];
+}
+
+/**
+ * POST /v1/games/{id}/entry: pays the entry of a paid game once; the game
+ * stays open for the player. ENTRY_FEE_PERCENT goes to the platform, the
+ * rest to the author. Same requestId (or a game already open) = nothing
+ * charged again. Playing a paid game before that: 402 payment_required.
+ */
+export interface EntryRequest {
+  requestId: string;
+}
+export interface EntryResult {
+  game: GameId;
+  tx: WalletTx | null;
 }
 
 /** GET /v1/games/{id}/currency: the player's balance in the game currency. */
@@ -345,6 +392,173 @@ export interface MatchFinished {
   profile: Profile;
   /** True when the server closed the match because it was never finished. */
   abandoned?: boolean;
+}
+
+// ----------------------------------------------------- game proposals
+
+/**
+ * Authors send ideas, not code: the platform builds approved games itself.
+ * A proposal goes through moderation and, once approved, becomes a game in
+ * the registry with the universes, currency, entry and author share it was
+ * approved with. Those never change afterwards.
+ */
+export type ProposalStatus = 'review' | 'changes_requested' | 'approved' | 'rejected';
+
+export interface ProposalDraft {
+  title: string;
+  description: string;
+  universes: CharacterId[] | 'all';
+  /** Own currency of the game; it can only be bought with ABIE and does not go back. */
+  currency: { code: string; rate: CurrencyRate; authorShare: number } | null;
+  entry: GameEntryFee;
+}
+
+export interface ProposalMessage {
+  id: string;
+  ts: number;
+  from: 'author' | 'moderator';
+  text: string;
+}
+
+export interface Proposal extends ProposalDraft {
+  id: string;
+  authorId: string;
+  status: ProposalStatus;
+  /** Version of the offer the author accepted. */
+  offerVersion: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: ProposalMessage[];
+  /** Set when approved: the game it became. */
+  gameId?: GameId;
+}
+
+export const PROPOSAL_TITLE_MIN = 3;
+export const PROPOSAL_TITLE_MAX = 60;
+export const PROPOSAL_DESCRIPTION_MIN = 20;
+export const PROPOSAL_DESCRIPTION_MAX = 2000;
+
+/**
+ * GET  /v1/offer?lang=ru                → Offer (the terms an author accepts)
+ * POST /v1/proposals { ...ProposalDraft, offerVersion, requestId } → Proposal
+ *      409 conflict if offerVersion is not the current one.
+ * GET  /v1/proposals                    → { items: Proposal[] }  (the player's own, newest first)
+ * GET  /v1/proposals/{id}               → Proposal
+ * POST /v1/proposals/{id}/messages { text }   → Proposal
+ * PUT  /v1/proposals/{id} { ...ProposalDraft } → Proposal  (only when changes were requested; goes back to review)
+ * Moderation (moderators only; in the stub it is server.dev.moderate):
+ * POST /v1/moderation/proposals/{id} { status, message? } → Proposal; 'approved' publishes the game.
+ */
+export interface ProposalCreateRequest extends ProposalDraft {
+  offerVersion: string;
+  requestId: string;
+}
+
+export interface Offer {
+  version: string;
+  /** True while the text is a draft waiting for a lawyer. */
+  draft: boolean;
+  title: string;
+  paragraphs: string[];
+}
+
+// ------------------------------------------------------- Market Kombat
+
+/**
+ * Turn-based fights between the characters of the universes. Both players
+ * choose a move within the turn timer without seeing the other's choice;
+ * when both have chosen (or the timer runs out) the server plays the turn
+ * out and both see what happened. Rules: src/game/kombat.ts.
+ *
+ * - pvp: equal stakes in fight chips (bought with ABIE); the winner takes
+ *   both, the platform keeps PLATFORM_FEE_PERCENT of the win; a draw returns
+ *   the stakes. Chips go back to ABIE after the fight.
+ * - bot: training only: no stakes, nothing to win.
+ */
+export type KombatMode = 'bot' | 'pvp';
+export type KombatMove = 'strike' | 'special' | 'block' | 'charge';
+export type KombatStatus = 'waiting' | 'active' | 'finished' | 'cancelled';
+
+export interface KombatFighterView {
+  nickname: string;
+  character: CharacterId;
+  gender: Gender;
+  isBot: boolean;
+  hp: number;
+  energy: number;
+  combo: number;
+  boosted: boolean;
+}
+
+export interface KombatTurnView {
+  turn: number;
+  moves: [KombatMove, KombatMove];
+  /** Damage each fighter took this turn. */
+  damage: [number, number];
+  crit: [boolean, boolean];
+  /** Health the special move gave back, energy it took from the other. */
+  healed: [number, number];
+  drained: [number, number];
+}
+
+export interface KombatSettlement {
+  /** Index of the winner in `fighters`, null for a draw. */
+  winner: 0 | 1 | null;
+  reason: 'ko' | 'turns' | 'forfeit';
+  /** Fight chips: the stake and what came back to this player. */
+  stake: number;
+  back: number;
+  fee: number;
+  /** ABIE back to the wallet and the result against the ABIE staked. */
+  payout: number;
+  net: number;
+  tx: WalletTx | null;
+}
+
+export interface KombatView {
+  id: string;
+  mode: KombatMode;
+  status: KombatStatus;
+  /** This player's index in `fighters`. */
+  you: 0 | 1;
+  /** The second fighter is null while waiting for an opponent. */
+  fighters: [KombatFighterView, KombatFighterView | null];
+  turn: number;
+  maxTurns: number;
+  turnMs: number;
+  /** When the current turn is played out; null outside an active fight. */
+  deadline: number | null;
+  serverNow: number;
+  /** This player's move for the current turn; the opponent's is never shown before the turn is played. */
+  myMove: KombatMove | null;
+  last: KombatTurnView | null;
+  stake: number;
+  stakeLots: number;
+  settlement: KombatSettlement | null;
+}
+
+/** POST /v1/kombat/fights */
+export interface KombatStartRequest {
+  mode: KombatMode;
+  /** pvp only: whole lots of the fight currency rate. */
+  stakeLots?: number;
+  requestId: string;
+}
+/** POST /v1/kombat/fights/{id}/move */
+export interface KombatMoveRequest {
+  turn: number;
+  move: KombatMove;
+}
+
+/** Energy boost: energy comes back twice as fast, for a paid number of pvp fights. Very expensive on purpose. */
+export const KOMBAT_BOOST_PACKS = [
+  { id: 'boost1', fights: 1, price: 500 },
+  { id: 'boost5', fights: 5, price: 2000 },
+] as const;
+export type KombatBoostPackId = (typeof KOMBAT_BOOST_PACKS)[number]['id'];
+/** GET /v1/kombat/boost → KombatBoost; POST /v1/kombat/boost { pack, requestId } → { tx, boost } */
+export interface KombatBoost {
+  fightsLeft: number;
 }
 
 // ------------------------------------------------------- help (later step)

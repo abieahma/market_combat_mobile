@@ -12,7 +12,7 @@ import { Sheet } from './Sheet';
 /** "1 ABIE = $100" for a game's rate. */
 export function rateText(game: ShownGame, fmt: (v: number) => string): string {
   const rate = game.entry?.currency?.rate;
-  return rate ? `${fmt(rate.abie)} ABIE = ${game.info.currencySign}${fmt(rate.units)}` : '';
+  return rate ? `${fmt(rate.abie)} ABIE = ${game.info.money(fmt(rate.units))}` : '';
 }
 
 export function StakeSheet({
@@ -42,12 +42,11 @@ export function StakeSheet({
   }, [game?.info.id, !!game]);
 
   if (!game) return null;
-  const sign = game.info.currencySign;
 
   return (
     <Sheet visible={!!game} onClose={onClose}>
       <Text style={[styles.title, { color: colors.text }]}>{t('stake.title')}</Text>
-      <Text style={[type.body, { color: colors.muted }]}>{t('stake.text')}</Text>
+      <Text style={[type.body, { color: colors.muted }]}>{t(game.info.stakeText)}</Text>
 
       <View style={[styles.rateRow, { borderColor: colors.line }]}>
         <Text style={[styles.rateLabel, { color: colors.muted }]}>{t('stake.rate')}</Text>
@@ -78,10 +77,7 @@ export function StakeSheet({
               >
                 <Text style={[styles.chipAbie, { color: colors.text }]}>{fmt(abie)}</Text>
                 <Text style={[styles.chipTicker, { color: colors.gold }]}>ABIE</Text>
-                <Text style={[styles.chipUnits, { color: colors.muted }]}>
-                  {sign}
-                  {fmt(l * rate.units)}
-                </Text>
+                <Text style={[styles.chipUnits, { color: colors.muted }]}>{game.info.money(fmt(l * rate.units))}</Text>
               </Pressable>
             );
           })}

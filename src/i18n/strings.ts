@@ -7,6 +7,7 @@
 import { ACCOUNTS_STRINGS, AccountsKey } from './accounts';
 import { CHARACTERS_STRINGS, CharactersKey } from './characters';
 import { ECONOMY_STRINGS, EconomyKey } from './economy';
+import { PLATFORM_STRINGS, PlatformKey } from './platform';
 
 export const LANGUAGES = [
   { code: 'en', name: 'English' },
@@ -667,10 +668,10 @@ const tk: Dict = {
 
 const CORE: Record<LangCode, Dict> = { en, ru, uk, be, kk, uz, ky, tg, hy, az, ro, tk };
 
-export type StringKey = CoreKey | AccountsKey | CharactersKey | EconomyKey;
+export type StringKey = CoreKey | AccountsKey | CharactersKey | EconomyKey | PlatformKey;
 
 export const STRINGS = Object.fromEntries(
-  LANGUAGES.map(({ code }) => [code, { ...CORE[code], ...ACCOUNTS_STRINGS[code], ...CHARACTERS_STRINGS[code], ...ECONOMY_STRINGS[code] }]),
+  LANGUAGES.map(({ code }) => [code, { ...CORE[code], ...ACCOUNTS_STRINGS[code], ...CHARACTERS_STRINGS[code], ...ECONOMY_STRINGS[code], ...PLATFORM_STRINGS[code] }]),
 ) as Record<LangCode, Record<StringKey, string>>;
 
 /** Fills {placeholders} in a text. */

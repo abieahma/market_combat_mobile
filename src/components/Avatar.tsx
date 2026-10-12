@@ -117,7 +117,7 @@ export function Avatar({ character, gender, size = 96, ring = true }: { characte
 /** Headwear: cap, headset, beanie or helmet. */
 function Gear({ character, cloth, c, gold }: { character: CharacterId; cloth: string; c: (typeof CHARACTERS)[CharacterId]; gold: string }) {
   switch (character) {
-    case 'valdberik':
+    case 'waldberik':
       return (
         <G>
           <Path d="M38 42 C38 25 49 19 60 19 C72 19 82 25 82 42 Z" fill={cloth} />
@@ -161,7 +161,7 @@ function Gear({ character, cloth, c, gold }: { character: CharacterId; cloth: st
 /** Small gold icon in the medallion. */
 function Tool({ character, gold }: { character: CharacterId; gold: string }) {
   switch (character) {
-    case 'valdberik': // parcel
+    case 'waldberik': // parcel
       return (
         <G>
           <Path d="M87 91 L95 87 L103 91 L103 100 L95 104 L87 100 Z" fill="none" stroke={gold} strokeWidth={1.6} strokeLinejoin="round" />

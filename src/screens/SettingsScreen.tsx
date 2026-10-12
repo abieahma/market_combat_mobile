@@ -27,9 +27,12 @@ export function SettingsScreen({
   onInbox,
   onCharacter,
   onChoose,
+  onModeration,
 }: {
   onBack: () => void;
   onInbox: () => void;
+  /** Developer panel: the moderator's side of game proposals. */
+  onModeration: () => void;
   /** Paid change of an already chosen character. */
   onCharacter: () => void;
   /** First, free choice. */
@@ -53,6 +56,8 @@ export function SettingsScreen({
     logout,
     net,
     setNet,
+    sparring,
+    setSparring,
     resetServer,
     notify,
   } = useStore();
@@ -273,6 +278,19 @@ export function SettingsScreen({
             />
           </View>
         </View>
+        <View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.line }]}>
+          <View style={styles.devRow}>
+            <Text style={[styles.rowText, { color: colors.text, flex: 1 }]}>{t('dev.sparring')}</Text>
+            <Switch
+              value={sparring}
+              onValueChange={setSparring}
+              trackColor={{ false: colors.line, true: colors.gold }}
+              thumbColor="#FFFFFF"
+              {...(Platform.OS === 'web' ? { activeThumbColor: '#FFFFFF' } : {})}
+            />
+          </View>
+        </View>
+        <Button variant="ghost" label={t('dev.moderation')} onPress={onModeration} />
         <Button variant="ghost" label={t('dev.inbox')} onPress={onInbox} />
         <Button
           variant={resetArmed ? 'down' : 'ghost'}

@@ -22,15 +22,15 @@ export interface Character {
 }
 
 export const CHARACTERS: Record<CharacterId, Character> = {
-  valdberik: {
-    id: 'valdberik',
+  waldberik: {
+    id: 'waldberik',
     color: '#8E3FD0',
     colorDeep: '#55207F',
     colorLight: '#C08BF2',
     glow: { dark: '#8E3FD0', light: '#C9A2EE' },
     ink: '#FFFFFF',
     soundPack: 'violet-warehouse',
-    text: { role: 'w.valdberik.role', motto: 'w.valdberik.motto', games: 'w.valdberik.games', play: 'w.valdberik.play' },
+    text: { role: 'w.waldberik.role', motto: 'w.waldberik.motto', games: 'w.waldberik.games', play: 'w.waldberik.play' },
   },
   ozonik: {
     id: 'ozonik',
@@ -65,11 +65,11 @@ export const CHARACTERS: Record<CharacterId, Character> = {
 };
 
 const NAMES: Record<'cyr' | 'lat' | 'uk' | 'be' | 'hy', Record<CharacterId, string>> = {
-  cyr: { valdberik: 'Валдберик', ozonik: 'Озоник', avitos: 'Авитос', yandos: 'Яндос' },
-  uk: { valdberik: 'Валдберік', ozonik: 'Озонік', avitos: 'Авітос', yandos: 'Яндос' },
-  be: { valdberik: 'Валдберык', ozonik: 'Озонік', avitos: 'Авітос', yandos: 'Яндос' },
-  hy: { valdberik: 'Վալդբերիկ', ozonik: 'Օզոնիկ', avitos: 'Ավիտոս', yandos: 'Յանդոս' },
-  lat: { valdberik: 'Valdberik', ozonik: 'Ozonik', avitos: 'Avitos', yandos: 'Yandos' },
+  cyr: { waldberik: 'Валдберик', ozonik: 'Озоник', avitos: 'Авитос', yandos: 'Яндос' },
+  uk: { waldberik: 'Валдберік', ozonik: 'Озонік', avitos: 'Авітос', yandos: 'Яндос' },
+  be: { waldberik: 'Валдберык', ozonik: 'Озонік', avitos: 'Авітос', yandos: 'Яндос' },
+  hy: { waldberik: 'Վալդբերիկ', ozonik: 'Օզոնիկ', avitos: 'Ավիտոս', yandos: 'Յանդոս' },
+  lat: { waldberik: 'Waldberik', ozonik: 'Ozonik', avitos: 'Avitos', yandos: 'Yandos' },
 };
 
 export function characterName(id: CharacterId, lang: LangCode): string {

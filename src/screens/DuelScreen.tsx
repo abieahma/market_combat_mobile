@@ -31,6 +31,9 @@ export interface DuelResult {
   matchId: string;
   standings: Standing[];
   myPlace: number;
+  /** Stake everyone started with and the player's balance at the end, in Chart Duel dollars. */
+  stake: number;
+  equity: number;
   /** What the player did, by match tick; the server will replay it. */
   actions: MatchAction[];
 }
@@ -43,6 +46,19 @@ const BOTS = [
 ];
 const COUNTDOWN_SECONDS = 3;
 
+function resultOf(duel: DuelState, matchId: string, actions: MatchAction[]): DuelResult {
+  const final = standings(duel);
+  const mine = final.find((s) => s.trader.id === ME);
+  return {
+    matchId,
+    standings: final,
+    myPlace: mine?.place ?? final.length,
+    stake: duel.startCash,
+    equity: Math.max(0, Math.floor(mine?.equity ?? 0)),
+    actions,
+  };
+}
+
 function clock(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
@@ -50,19 +66,22 @@ function clock(seconds: number) {
 export function DuelScreen({
   matchId,
   seed,
+  stake,
   onFinish,
-  onLeave,
 }: {
   matchId: string;
   /** Chosen by the server, so every client of the match sees the same prices. */
   seed: number;
+  /** The player's stake in Chart Duel dollars; every trader starts with it. */
+  stake: number;
+  /** Called at the bell, or right away when the player leaves (the match is settled at that moment). */
   onFinish: (r: DuelResult) => void;
-  onLeave: () => void;
 }) {
   const { colors, t, fmt, profile, haptic } = useStore();
   const [duel, setDuel] = useState<DuelState>(() =>
-    createDuel(seed, [{ id: ME, name: profile?.nickname ?? 'You', isBot: false }, ...BOTS.map((b) => ({ ...b, isBot: true }))]),
+    createDuel(seed, [{ id: ME, name: profile?.nickname ?? 'You', isBot: false }, ...BOTS.map((b) => ({ ...b, isBot: true }))], stake),
   );
+  const done = useRef(false);
   const actions = useRef<MatchAction[]>([]);
   const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS);
   const [leverage, setLeverage] = useState<Leverage>(2);
@@ -95,11 +114,10 @@ export function DuelScreen({
         haptic('error');
         setToast(t('duel.liquidated'));
       }
-      if (e.type === 'finished') {
-        const final = standings(duel);
-        const myPlace = final.find((s) => s.trader.id === ME)?.place ?? final.length;
-        haptic(myPlace === 1 ? 'success' : 'warning');
-        const result: DuelResult = { matchId, standings: final, myPlace, actions: actions.current };
+      if (e.type === 'finished' && !done.current) {
+        done.current = true;
+        const result = resultOf(duel, matchId, actions.current);
+        haptic(result.myPlace === 1 ? 'success' : 'warning');
         setTimeout(() => finishRef.current(result), 900);
       }
     }
@@ -162,8 +180,14 @@ export function DuelScreen({
           accessibilityRole="button"
           onPress={() => {
             haptic('tap');
-            if (leaveArmed) onLeave();
-            else setLeaveArmed(true);
+            if (!leaveArmed) {
+              setLeaveArmed(true);
+              return;
+            }
+            // Leaving settles the match now, at the current balance.
+            if (done.current) return;
+            done.current = true;
+            onFinish(resultOf(duel, matchId, actions.current));
           }}
           style={[styles.leave, { borderColor: leaveArmed ? down : colors.line, backgroundColor: leaveArmed ? colors.downSoft : 'transparent' }]}
         >

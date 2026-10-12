@@ -29,6 +29,7 @@ const expectErr = async (p, code) => { try { await p; assert.fail('expected ' + 
     assert.equal(res.isNew, true);
     accountId = res.account.id; token = res.session.token;
     api.setToken(token);
+    globalThis.mainToken = token;
     assert.equal((await api.wallet.get()).balance, 100);
     await expectErr(api.auth.emailVerify(ch.challengeId, inbox[0].code), 'challenge_expired');
   });
@@ -50,30 +51,118 @@ const expectErr = async (p, code) => { try { await p; assert.fail('expected ' + 
     assert.equal(p.nickname, 'Bull Run');
   });
 
-  await t('matches: reward once per match, stats updated', async () => {
-    const m = await api.matches.start({ game: 'duel' });
-    assert.ok(Number.isInteger(m.seed));
-    await expectErr(api.matches.finish(m.matchId, { place: 9, actions: [] }), 'invalid_input');
-    const r1 = await api.matches.finish(m.matchId, { place: 1, actions: [] });
-    const r2 = await api.matches.finish(m.matchId, { place: 1, actions: [] });
-    assert.equal(r1.reward, 50);
+  const { MATCH_STALE_MS } = require('../.stub-build/mock-server/server.js');
+  let balanceNow = 100;
+
+  await t('games: Chart Duel is common to all universes, its own currency has a fixed rate', async () => {
+    const { items } = await api.games.list();
+    const duel = items.find((g) => g.id === 'duel');
+    assert.equal(duel.universes, 'all');
+    assert.deepEqual(duel.currency, { code: 'DUSD', rate: { abie: 1, units: 100 }, settle: 'match' });
+  });
+
+  await t('matches: no character, no game', async () => {
+    await expectErr(api.matches.start({ game: 'duel', stakeLots: 10, requestId: 'nochar' }), 'conflict');
+    await expectErr(api.games.buyCurrency('duel', 1, 'nochar'), 'conflict');
+    await api.me.chooseCharacter('valdberik', 'm');
+  });
+
+  await t('duel: stake bought with ABIE, same request = same match, profit back minus 10%, no prizes', async () => {
+    const m = await api.matches.start({ game: 'duel', stakeLots: 10, requestId: 's1' });
+    assert.equal(m.stake, 1000);
+    assert.equal(m.tx.kind, 'currency_buy');
+    assert.equal(m.tx.amount, -10);
+    assert.equal((await api.wallet.get()).balance, 90);
+    const again = await api.matches.start({ game: 'duel', stakeLots: 10, requestId: 's1' });
+    assert.equal(again.matchId, m.matchId);
+    assert.equal((await api.wallet.get()).balance, 90);
+    await expectErr(api.matches.finish(m.matchId, { place: 1, equity: -5, actions: [] }), 'invalid_input');
+    await expectErr(api.matches.finish(m.matchId, { place: 1, equity: 12.5, actions: [] }), 'invalid_input');
+    const r1 = await api.matches.finish(m.matchId, { place: 1, equity: 1230, actions: [] });
+    // profit 230, fee 23 (10% rounded up), back 1207 = 12 ABIE
+    assert.deepEqual([r1.profit, r1.fee, r1.payout, r1.net], [230, 23, 12, 2]);
+    assert.equal(r1.tx.kind, 'currency_return');
+    const r2 = await api.matches.finish(m.matchId, { place: 1, equity: 99999, actions: [] });
     assert.deepEqual(r1, r2);
-    assert.equal((await api.wallet.get()).balance, 150);
-    const me = await api.me.get();
-    assert.deepEqual(me.profile.stats, { matches: 1, wins: 1, earned: 50 });
+    assert.equal((await api.wallet.get()).balance, 102);
+    assert.deepEqual((await api.me.get()).profile.stats, { matches: 1, wins: 1, earned: 2 });
+  });
+
+  await t('duel: a loss returns what is left, no fee', async () => {
+    const m = await api.matches.start({ game: 'duel', stakeLots: 10, requestId: 's2' });
+    const r = await api.matches.finish(m.matchId, { place: 4, equity: 640, actions: [] });
+    assert.deepEqual([r.profit, r.fee, r.payout, r.net], [-360, 0, 6, -4]);
+    const zero = await api.matches.start({ game: 'duel', stakeLots: 5, requestId: 's3' });
+    const z = await api.matches.finish(zero.matchId, { place: 4, equity: 0, actions: [] });
+    assert.deepEqual([z.fee, z.payout, z.net, z.tx], [0, 0, -5, null]);
+    assert.equal((await api.wallet.get()).balance, 93);
+    assert.deepEqual((await api.me.get()).profile.stats, { matches: 3, wins: 1, earned: -7 });
+  });
+
+  await t('currency: bought only with ABIE, once per key, ABIE go to the platform', async () => {
+    const b1 = await api.games.buyCurrency('duel', 3, 'b1');
+    assert.deepEqual([b1.tx.amount, b1.currency.balance], [-3, 300]);
+    const b1again = await api.games.buyCurrency('duel', 3, 'b1');
+    assert.equal(b1again.tx.id, b1.tx.id);
+    assert.equal((await api.games.currency('duel')).balance, 300);
+    await expectErr(api.games.buyCurrency('duel', 1000, 'b2'), 'insufficient_funds');
+    await expectErr(api.games.buyCurrency('duel', 0, 'b3'), 'invalid_input');
+    // A stake uses what is already there and buys only the rest (2 lots).
+    const m = await api.matches.start({ game: 'duel', stakeLots: 5, requestId: 's4' });
+    assert.equal(m.tx.amount, -2);
+    assert.equal((await api.games.currency('duel')).balance, 0);
+    await api.matches.finish(m.matchId, { place: 2, equity: 500, actions: [] });
+    assert.equal((await api.wallet.get()).balance, 93);
+    // Sold 10+10+5+3+2 = 30, paid back 12+6+0+5 = 23.
+    assert.equal(server.wallet.balance('platform'), 7);
+    assert.ok(await server.dev.walletAudit());
+  });
+
+  await t('rate is fixed forever: no route changes a game, publishing again is refused', async () => {
+    const raw = new MockTransport(server, () => sim);
+    for (const method of ['PATCH', 'PUT', 'DELETE']) {
+      const res = await raw.send({ method, path: '/v1/games/duel', body: { currency: { rate: { abie: 1, units: 1000 } } }, token: globalThis.mainToken });
+      assert.equal(res.status, 404);
+    }
+    const duel = (await api.games.list()).items.find((g) => g.id === 'duel');
+    await assert.rejects(server.dev.publishGame({ ...duel, currency: { ...duel.currency, rate: { abie: 1, units: 1000 } } }), /already published/);
+    await assert.rejects(server.dev.publishGame({ id: 'bad', universes: 'all', currency: { code: 'B', rate: { abie: 1.5, units: 10 }, settle: 'none' }, publishedAt: 1 }), /whole numbers/);
+    assert.deepEqual((await api.games.list()).items.find((g) => g.id === 'duel').currency.rate, { abie: 1, units: 100 });
+  });
+
+  await t('universes: a game of another universe cannot be played or bought', async () => {
+    await server.dev.publishGame({ id: 'hubquiz', universes: ['ozonik'], currency: { code: 'HQ', rate: { abie: 2, units: 5 }, settle: 'none' }, publishedAt: Date.now() });
+    const ids = (await api.games.list()).items.map((g) => g.id);
+    assert.deepEqual(ids, ['duel', 'hubquiz']);
+    await expectErr(api.matches.start({ game: 'hubquiz', stakeLots: 1, requestId: 'q1' }), 'forbidden');
+    await expectErr(api.games.buyCurrency('hubquiz', 1, 'q1'), 'forbidden');
+    await expectErr(api.games.buyCurrency('nope', 1, 'q1'), 'not_found');
+  });
+
+  await t('a match never finished is closed by the server: stake back, no fee, not counted', async () => {
+    await api.matches.start({ game: 'duel', stakeLots: 10, requestId: 's5' });
+    assert.equal((await api.wallet.get()).balance, 83);
+    const realNow = server.now;
+    server.now = () => realNow() + MATCH_STALE_MS + 1000;
+    assert.equal((await api.wallet.get()).balance, 93);
+    assert.equal((await api.me.get()).profile.stats.matches, 4);
+    server.now = realNow;
+    balanceNow = 93;
   });
 
   await t('wallet: history newest first with pages', async () => {
-    for (let i = 0; i < 4; i++) { const m = await api.matches.start({ game: 'duel' }); await api.matches.finish(m.matchId, { place: 4, actions: [] }); }
-    const p1 = await api.wallet.transactions(null, 3);
-    assert.equal(p1.items.length, 3);
-    assert.equal(p1.items[0].kind, 'match_reward');
-    assert.ok(p1.nextCursor);
-    const p2 = await api.wallet.transactions(p1.nextCursor, 3);
-    assert.equal(p2.items.length, 3);
-    assert.equal(p2.items.at(-1).kind, 'welcome');
-    assert.equal(p2.nextCursor, null);
-    assert.equal(p1.items[0].balanceAfter, 170);
+    const all = [];
+    let cursor = null;
+    do {
+      const page = await api.wallet.transactions(cursor, 3);
+      assert.ok(page.items.length <= 3);
+      all.push(...page.items);
+      cursor = page.nextCursor;
+    } while (cursor);
+    assert.equal(all[0].balanceAfter, balanceNow);
+    assert.equal(all.at(-1).kind, 'welcome');
+    for (let i = 0; i < all.length - 1; i++) assert.equal(all[i].balanceAfter - all[i].amount, all[i + 1].balanceAfter);
+    assert.ok(all.some((x) => x.kind === 'currency_buy') && all.some((x) => x.kind === 'currency_return'));
   });
 
   await t('logout ends the session; signing in again restores the same account', async () => {
@@ -85,7 +174,7 @@ const expectErr = async (p, code) => { try { await p; assert.fail('expected ' + 
     assert.equal(res.isNew, false);
     assert.equal(res.account.id, accountId);
     api.setToken(res.session.token);
-    assert.equal((await api.wallet.get()).balance, 170);
+    assert.equal((await api.wallet.get()).balance, balanceNow);
     assert.equal(res.profile.nickname, 'Bull Run');
   });
 

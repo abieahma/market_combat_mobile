@@ -186,3 +186,26 @@ function Tool({ character, gold }: { character: CharacterId; gold: string }) {
       );
   }
 }
+
+/** Empty frame shown before a character is chosen: a quiet silhouette in the gold ring. */
+export function AvatarPlaceholder({ size = 96 }: { size?: number }) {
+  const { colors } = useStore();
+  const raw = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const gold = `gold${raw}`;
+  return (
+    <View style={{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden' }}>
+      <Svg width={size} height={size} viewBox="0 0 120 120">
+        <Defs>
+          <LinearGradient id={gold} x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor={colors.goldHi} />
+            <Stop offset="1" stopColor={colors.goldLo} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="120" height="120" fill="#120E0A" />
+        <Circle cx="60" cy="50" r="20" fill={colors.goldLo} fillOpacity={0.35} />
+        <Path d="M22 122 C24 98 40 84 60 84 C80 84 96 98 98 122 Z" fill={colors.goldLo} fillOpacity={0.35} />
+        <Circle cx="60" cy="60" r="58.8" fill="none" stroke={`url(#${gold})`} strokeWidth={1.6} strokeDasharray="4 5" />
+      </Svg>
+    </View>
+  );
+}

@@ -2,7 +2,8 @@
 //
 // Pure, deterministic rules with no React or platform imports, so the same
 // file can run on the game server later. Everyone trades one shared price
-// series; the highest balance after the timer wins.
+// series with the same starting balance (the player's stake in Chart Duel
+// dollars); the highest balance after the timer wins.
 
 import { nextFloat, nextInt, nextNormal, nextRange, pick, RngState } from './rng';
 
@@ -13,6 +14,7 @@ export const MATCH_SECONDS = 60;
 export const MATCH_TICKS = (MATCH_SECONDS * 1000) / TICK_MS;
 /** Ticks of price history shown before the match starts. */
 export const HISTORY_TICKS = 80;
+/** Starting balance when no stake is given (previews, tests). */
 export const START_CASH = 10_000;
 export const START_PRICE = 100;
 /** Trading fee, share of position size, charged on open and on close. */
@@ -20,8 +22,6 @@ export const FEE_RATE = 0.0004;
 /** A position is liquidated when its loss reaches this share of its margin. */
 export const LIQUIDATION_LOSS = 0.95;
 export const LEVERAGES = [1, 2, 5, 10] as const;
-/** ABIE paid out by finishing place (1st, 2nd, …). */
-export const PLACE_REWARDS = [50, 25, 10, 5] as const;
 /** Ticks between a headline appearing and the price starting to move. */
 export const NEWS_LEAD_TICKS = 2;
 
@@ -68,6 +68,8 @@ export interface NewsEvent {
 
 export interface DuelState {
   seed: number;
+  /** Balance every trader starts with. */
+  startCash: number;
   /** Match tick, 0 … MATCH_TICKS. */
   tick: number;
   /** HISTORY_TICKS + MATCH_TICKS + 1 prices; index HISTORY_TICKS is the match start. */
@@ -182,7 +184,7 @@ export function generateSeries(seed: number): Series {
 
 // ------------------------------------------------------------------- match
 
-export function createDuel(seed: number, slots: PlayerSlot[]): DuelState {
+export function createDuel(seed: number, slots: PlayerSlot[], startCash: number = START_CASH): DuelState {
   const { prices, news } = generateSeries(seed);
   let botRng: RngState = (seed ^ 0x9e3779b9) >>> 0;
   const traders = slots.map((slot) => {
@@ -193,7 +195,7 @@ export function createDuel(seed: number, slots: PlayerSlot[]): DuelState {
       name: slot.name,
       isBot: slot.isBot,
       style: slot.style,
-      cash: START_CASH,
+      cash: startCash,
       position: null,
       trades: 0,
       liquidations: 0,
@@ -202,7 +204,7 @@ export function createDuel(seed: number, slots: PlayerSlot[]): DuelState {
     };
     return trader;
   });
-  return { seed, tick: 0, prices, news, traders, botRng, finished: false, events: [] };
+  return { seed, startCash, tick: 0, prices, news, traders, botRng, finished: false, events: [] };
 }
 
 export function priceAt(state: DuelState, tick = state.tick): number {
@@ -240,14 +242,10 @@ export function standings(state: DuelState): Standing[] {
   return state.traders
     .map((trader) => {
       const equity = equityOf(trader, price);
-      return { trader, equity, change: equity / START_CASH - 1, place: 0 };
+      return { trader, equity, change: equity / state.startCash - 1, place: 0 };
     })
     .sort((a, b) => b.equity - a.equity)
     .map((s, i) => ({ ...s, place: i + 1 }));
-}
-
-export function rewardForPlace(place: number): number {
-  return PLACE_REWARDS[place - 1] ?? 0;
 }
 
 // ----------------------------------------------------------------- trading

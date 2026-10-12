@@ -3,6 +3,7 @@
 // Games never touch balances directly; they ask this service to post an
 // operation.
 
+import { PLATFORM_ACCOUNT } from '../api/contract';
 import type { TxPage, WalletTx } from '../api/contract';
 import { emptyLedger, LedgerState, post, PostRequest, replay } from '../wallet/ledger';
 import { Database, KeyValue } from './db';
@@ -47,7 +48,7 @@ export class WalletService {
 
   /** Posts one operation. Same id twice = the first result, nothing charged again. */
   post(accountId: string, req: PostRequest, now = Date.now()): WalletTx {
-    const res = post(this.ledger(accountId), req, now);
+    const res = post(this.ledger(accountId), req, now, { allowNegative: accountId === PLATFORM_ACCOUNT });
     if (!res.ok) throw new WalletError(res.error);
     if (!res.duplicate) this.db.table<LedgerState>('ledgers').put(accountId, res.state);
     return res.tx;

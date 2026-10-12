@@ -62,6 +62,7 @@ export interface Profile {
   genderChangedAt: number | null;
   /** Skins the player owns. */
   skins: SkinId[];
+  /** `earned`: net ABIE result of all matches (what came back minus stakes); can be negative. */
   stats: { matches: number; wins: number; earned: number };
   respect: { points: number; level: number };
 }
@@ -167,7 +168,22 @@ export interface ChangeGenderRequest {
 
 // ------------------------------------------------------------ ABIE wallet
 
-export type TxKind = 'welcome' | 'match_reward' | 'character_change';
+/**
+ * - welcome: bonus for a new account
+ * - match_reward: prize for a place (old matches; prizes are gone)
+ * - character_change: paid character change
+ * - currency_buy: ABIE paid for a game currency (player side)
+ * - currency_return: game currency turned back into ABIE after a match (player side)
+ * - currency_sale / currency_payout: the same two, seen from the platform account
+ */
+export type TxKind =
+  | 'welcome'
+  | 'match_reward'
+  | 'character_change'
+  | 'currency_buy'
+  | 'currency_return'
+  | 'currency_sale'
+  | 'currency_payout';
 
 export interface WalletTx {
   /** Unique operation id; posting the same id again changes nothing. */
@@ -193,19 +209,102 @@ export interface TxPage {
   nextCursor: string | null;
 }
 
+// -------------------------------------------------------------------- games
+
+/** Any game published on the platform; the app knows how to show the ones in src/games.ts. */
+export type GameId = string;
+
+/** Account that receives the ABIE paid for game currencies and pays back what returns from matches. */
+export const PLATFORM_ACCOUNT = 'platform';
+/** Share of a player's profit the platform keeps when a game currency goes back to ABIE. */
+export const PLATFORM_FEE_PERCENT = 10;
+
+/** `abie` ABIE buy `units` of the game currency. Whole numbers only. */
+export interface CurrencyRate {
+  abie: number;
+  units: number;
+}
+
+export interface GameCurrency {
+  /** Short code, e.g. DUSD for Chart Duel dollars. */
+  code: string;
+  /** Set once when the game is published on the platform and never changed. */
+  rate: CurrencyRate;
+  /**
+   * What happens to the currency after a match:
+   * - 'match': everything the match returns goes back to ABIE at the same rate;
+   *   the platform keeps PLATFORM_FEE_PERCENT of the profit, nothing of a loss.
+   * - 'none': it stays in the game. A general way back to ABIE does not exist
+   *   yet; it will be decided later.
+   */
+  settle: 'match' | 'none';
+}
+
+/**
+ * A game on the platform. Everything here is set when the game is published
+ * and is never changed afterwards; there is no route to change it.
+ */
+export interface GameEntry {
+  id: GameId;
+  /** Universes (characters) the game appears in; 'all' means a common game. */
+  universes: CharacterId[] | 'all';
+  /** The game's own currency, bought only with ABIE; null if it has none. */
+  currency: GameCurrency | null;
+  publishedAt: number;
+}
+
+/** GET /v1/games */
+export interface GameList {
+  items: GameEntry[];
+}
+
+/** GET /v1/games/{id}/currency: the player's balance in the game currency. */
+export interface GameCurrencyBalance {
+  game: GameId;
+  code: string;
+  balance: number;
+}
+
+/**
+ * POST /v1/games/{id}/currency/buy: buys `lots` × rate.units for
+ * `lots` × rate.abie ABIE. The ABIE go to PLATFORM_ACCOUNT. Repeating the same
+ * requestId returns the first result and charges nothing more.
+ * 409 insufficient_funds when the ABIE balance is too low.
+ */
+export interface CurrencyBuyRequest {
+  lots: number;
+  requestId: string;
+}
+export interface CurrencyBuyResult {
+  tx: WalletTx;
+  currency: GameCurrencyBalance;
+}
+
 // ------------------------------------------------------------------ matches
 
-export type GameId = 'duel';
-
-/** POST /v1/matches: the server opens a match and picks the seed. */
+/**
+ * POST /v1/matches: the server opens a match and picks the seed.
+ * Games with a currency need a stake: `stakeLots` whole lots of the rate.
+ * Whatever the player lacks in the game currency is bought from ABIE in the
+ * same operation. The same requestId returns the same match.
+ * 403 if the game is not in the player's universe, 409 conflict if no
+ * character is chosen yet, 409 insufficient_funds if ABIE are short.
+ */
 export interface MatchStartRequest {
   game: GameId;
+  stakeLots?: number;
+  requestId: string;
 }
 export interface MatchStarted {
   matchId: string;
   game: GameId;
   seed: number;
   startedAt: number;
+  /** Stake in the game currency; every trader starts the match with it. */
+  stake: number;
+  stakeLots: number;
+  /** The ABIE purchase made for the stake, if one was needed. */
+  tx: WalletTx | null;
 }
 
 /** One player action during a match, by match tick. */
@@ -218,19 +317,34 @@ export interface MatchAction {
 
 /**
  * POST /v1/matches/{matchId}/finish
- * Today the server trusts `place`. In the next step it replays `actions`
- * with the match seed and computes the place itself.
+ * Today the server trusts `place` and `equity`. In the next step it replays
+ * `actions` with the match seed and computes both itself.
+ * A match not finished in time is settled by the server as a refund of the stake.
  */
 export interface MatchFinishRequest {
   place: number;
+  /** Player's balance in the game currency at the end, whole units. */
+  equity: number;
   actions: MatchAction[];
 }
 export interface MatchFinished {
   matchId: string;
   place: number;
-  reward: number;
+  /** In the game currency. */
+  stake: number;
+  equity: number;
+  /** equity − stake. */
+  profit: number;
+  /** Kept by the platform: PLATFORM_FEE_PERCENT of a profit, rounded up; 0 for a loss. */
+  fee: number;
+  /** ABIE returned to the wallet: (equity − fee) at the rate, rounded to whole ABIE. */
+  payout: number;
+  /** payout − ABIE paid for the stake. */
+  net: number;
   tx: WalletTx | null;
   profile: Profile;
+  /** True when the server closed the match because it was never finished. */
+  abandoned?: boolean;
 }
 
 // ------------------------------------------------------- help (later step)

@@ -9,7 +9,7 @@ import * as Haptics from 'expo-haptics';
 import { createContext, ReactNode, useCallback, useEffect, useMemo, useRef, useState, useContext } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 import { ApiClient, createApi } from '../api/client';
-import type { Account, AuthResult, CharacterId, Gender, MatchAction, MatchFinished, MatchStarted, Profile } from '../api/contract';
+import type { Account, AuthResult, CharacterId, GameEntry, GameId, Gender, MatchAction, MatchFinished, MatchStarted, Profile } from '../api/contract';
 import { isApiError } from '../api/transport';
 import { DEFAULT_LANG, fill, formatNumber, isLangCode, LangCode, STRINGS, StringKey } from '../i18n/strings';
 import { server } from '../mock-server';
@@ -35,6 +35,8 @@ interface Cache {
   account: Account;
   profile: Profile;
   balance: number;
+  /** Games published on the platform, as the server last listed them. */
+  games?: GameEntry[];
 }
 
 export type AuthStatus = 'loading' | 'signedOut' | 'signedIn';
@@ -114,8 +116,11 @@ interface StoreValue {
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   setNickname: (name: string) => Promise<void>;
-  startMatch: () => Promise<MatchStarted>;
-  finishMatch: (matchId: string, place: number, actions: MatchAction[]) => Promise<MatchFinished>;
+  /** Games on the platform (all of them; the hub picks the ones of the player's universe). */
+  games: GameEntry[];
+  /** Opens a match; for a game with a currency the stake is bought from ABIE in the same step. */
+  startMatch: (game: GameId, stakeLots: number) => Promise<MatchStarted>;
+  finishMatch: (matchId: string, place: number, equity: number, actions: MatchAction[]) => Promise<MatchFinished>;
   chooseCharacter: (character: CharacterId, gender: Gender) => Promise<void>;
   changeCharacter: (character: CharacterId) => Promise<void>;
   changeGender: (gender: Gender) => Promise<void>;
@@ -162,8 +167,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [me, wallet] = await Promise.all([api.me.get(), api.wallet.get()]);
-      saveCache({ account: me.account, profile: me.profile, balance: wallet.balance });
+      const [me, wallet, games] = await Promise.all([api.me.get(), api.wallet.get(), api.games.list()]);
+      saveCache({ account: me.account, profile: me.profile, balance: wallet.balance, games: games.items });
     } catch (e) {
       if (isApiError(e) && e.code === 'unauthorized') signOutLocally();
       // Network trouble: keep showing the cached copy.
@@ -201,8 +206,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         refresh();
       } else {
         try {
-          const [me, wallet] = await Promise.all([api.me.get(), api.wallet.get()]);
-          saveCache({ account: me.account, profile: me.profile, balance: wallet.balance });
+          const [me, wallet, games] = await Promise.all([api.me.get(), api.wallet.get(), api.games.list()]);
+          saveCache({ account: me.account, profile: me.profile, balance: wallet.balance, games: games.items });
           setStatus('signedIn');
         } catch {
           signOutLocally();
@@ -268,7 +273,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       completeSignIn: (result) => {
         api.setToken(result.session.token);
         AsyncStorage.setItem(KEYS.session, result.session.token).catch(() => {});
-        saveCache({ account: result.account, profile: result.profile, balance: cache?.balance ?? 0 });
+        saveCache({ account: result.account, profile: result.profile, balance: cache?.balance ?? 0, games: cache?.games });
         setStatus('signedIn');
         refresh();
       },
@@ -285,11 +290,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const profile = await api.me.patch({ nickname: name });
         updateCache((c) => ({ ...c, profile }));
       },
-      startMatch: () => api.matches.start({ game: 'duel' }),
-      finishMatch: async (matchId, place, actions) => {
-        // The server pays a match only once, so retrying after a lost answer is safe.
-        const res = await withRetry(() => api.matches.finish(matchId, { place, actions }));
+      games: cache?.games ?? [],
+      startMatch: async (game, stakeLots) => {
+        // One id per tap: a repeat after a lost answer opens the same match and charges once.
+        const id = requestId();
+        const res = await withRetry(() => api.matches.start({ game, stakeLots, requestId: id }));
+        const tx = res.tx;
+        if (tx) updateCache((c) => ({ ...c, balance: tx.balanceAfter }));
+        return res;
+      },
+      finishMatch: async (matchId, place, equity, actions) => {
+        // The server settles a match only once, so retrying after a lost answer is safe.
+        const res = await withRetry(() => api.matches.finish(matchId, { place, equity, actions }));
         updateCache((c) => ({ ...c, profile: res.profile, balance: res.tx ? res.tx.balanceAfter : c.balance }));
+        refresh();
         return res;
       },
       chooseCharacter: async (character, gender) => {

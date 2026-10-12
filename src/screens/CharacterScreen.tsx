@@ -1,6 +1,7 @@
 // Character choice. Two modes:
-// - choose: right after the first sign-in, before the hub; gender and one of
-//   the four free characters, no way around it.
+// - choose: the first choice, free; opened from the hub (a game or the
+//   "Choose character" button) or from settings. Games open only after it.
+//   Back (arrow or system button) returns to the hub without choosing.
 // - change: from settings; costs CHARACTER_CHANGE_COST ABIE, asks for a
 //   second tap, keeps ratings, history and ABIE.
 
@@ -18,7 +19,7 @@ import { characterName, CHARACTERS, worldColor } from '../world/characters';
 
 const GAP = 12;
 
-export function CharacterScreen({ mode, onBack }: { mode: 'choose' | 'change'; onBack?: () => void }) {
+export function CharacterScreen({ mode, onBack }: { mode: 'choose' | 'change'; onBack: () => void }) {
   const { colors, t, tf, fmt, settings, scheme, profile, balance, chooseCharacter, changeCharacter, refresh, notify, haptic } = useStore();
   const current = profile?.character ?? null;
   const [gender, setGender] = useState<Gender>(profile?.gender ?? 'm');
@@ -45,10 +46,13 @@ export function CharacterScreen({ mode, onBack }: { mode: 'choose' | 'change'; o
     try {
       await chooseCharacter(picked, gender);
       haptic('success');
+      onBack();
     } catch (e) {
       // Already chosen on another device: take what the server has.
-      if (isApiError(e) && e.code === 'conflict') await refresh();
-      else notify(t('net.error'));
+      if (isApiError(e) && e.code === 'conflict') {
+        await refresh();
+        onBack();
+      } else notify(t('net.error'));
     } finally {
       setBusy(false);
     }
@@ -66,7 +70,7 @@ export function CharacterScreen({ mode, onBack }: { mode: 'choose' | 'change'; o
       await changeCharacter(picked);
       haptic('success');
       notify(t('char.changed'));
-      onBack?.();
+      onBack();
     } catch (e) {
       notify(isApiError(e) && e.code === 'insufficient_funds' ? t('char.notEnough') : t('net.error'));
     } finally {
@@ -82,6 +86,7 @@ export function CharacterScreen({ mode, onBack }: { mode: 'choose' | 'change'; o
         <TopBar title={t('char.change')} onBack={onBack} />
       ) : (
         <View style={styles.head}>
+          <TopBar onBack={onBack} />
           <Text style={[styles.title, { color: scheme === 'dark' ? colors.goldHi : colors.gold }]}>{t('char.chooseTitle')}</Text>
           <Text style={[type.body, { color: colors.muted }]}>{t('char.chooseSub')}</Text>
         </View>

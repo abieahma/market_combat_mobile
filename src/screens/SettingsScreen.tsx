@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { AuthProvider, Gender, GENDER_CHANGE_COOLDOWN_MS, NICKNAME_MAX } from '../api/contract';
 import { isApiError } from '../api/transport';
-import { Avatar } from '../components/Avatar';
+import { Avatar, AvatarPlaceholder } from '../components/Avatar';
 import { formatWhen, LANGUAGES, StringKey } from '../i18n/strings';
 import { GenderToggle } from './CharacterScreen';
 import { useStore } from '../state/store';
@@ -22,7 +22,19 @@ const PROVIDER_LABEL: Record<AuthProvider, string | StringKey> = {
   email: 'auth.emailLabel',
 };
 
-export function SettingsScreen({ onBack, onInbox, onCharacter }: { onBack: () => void; onInbox: () => void; onCharacter: () => void }) {
+export function SettingsScreen({
+  onBack,
+  onInbox,
+  onCharacter,
+  onChoose,
+}: {
+  onBack: () => void;
+  onInbox: () => void;
+  /** Paid change of an already chosen character. */
+  onCharacter: () => void;
+  /** First, free choice. */
+  onChoose: () => void;
+}) {
   const {
     colors,
     t,
@@ -107,6 +119,19 @@ export function SettingsScreen({ onBack, onInbox, onCharacter }: { onBack: () =>
           </View>
           <Button variant="ghost" label={t('account.logout')} onPress={logout} />
           <Text style={[styles.hint, { color: colors.faint }]}>{t('account.logoutNote')}</Text>
+        </View>
+      )}
+
+      {profile && !profile.character && (
+        <View style={styles.group}>
+          <SectionLabel>{t('char.section')}</SectionLabel>
+          <Glass style={styles.charCard}>
+            <AvatarPlaceholder size={72} />
+            <View style={styles.charText}>
+              <Text style={[styles.hint, { color: colors.muted }]}>{t('hub.chooseFirst')}</Text>
+            </View>
+          </Glass>
+          <Button label={t('hub.choose')} onPress={onChoose} />
         </View>
       )}
 

@@ -7,7 +7,11 @@ import type {
   CharacterId,
   ChallengeStarted,
   ChallengeStatus,
+  CurrencyBuyResult,
   ErrorCode,
+  GameCurrencyBalance,
+  GameId,
+  GameList,
   Gender,
   MatchFinishRequest,
   MatchFinished,
@@ -42,6 +46,11 @@ export interface ApiClient {
   wallet: {
     get(): Promise<WalletView>;
     transactions(cursor?: string | null, limit?: number): Promise<TxPage>;
+  };
+  games: {
+    list(): Promise<GameList>;
+    currency(game: GameId): Promise<GameCurrencyBalance>;
+    buyCurrency(game: GameId, lots: number, requestId: string): Promise<CurrencyBuyResult>;
   };
   matches: {
     start(req: MatchStartRequest): Promise<MatchStarted>;
@@ -90,6 +99,11 @@ export function createApi(transport: Transport): ApiClient {
         if (cursor) q += `&cursor=${encodeURIComponent(cursor)}`;
         return call('GET', `/v1/wallet/transactions?${q}`);
       },
+    },
+    games: {
+      list: () => call('GET', '/v1/games'),
+      currency: (game) => call('GET', `/v1/games/${encodeURIComponent(game)}/currency`),
+      buyCurrency: (game, lots, requestId) => call('POST', `/v1/games/${encodeURIComponent(game)}/currency/buy`, { lots, requestId }),
     },
     matches: {
       start: (req) => call('POST', '/v1/matches', req),

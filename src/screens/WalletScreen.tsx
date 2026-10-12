@@ -11,6 +11,10 @@ const KIND_LABEL: Record<TxKind, StringKey> = {
   welcome: 'tx.welcome',
   match_reward: 'tx.match_reward',
   character_change: 'tx.character_change',
+  currency_buy: 'tx.currency_buy',
+  currency_return: 'tx.currency_return',
+  currency_sale: 'tx.currency_sale',
+  currency_payout: 'tx.currency_payout',
 };
 
 export function WalletScreen({ onBack }: { onBack: () => void }) {

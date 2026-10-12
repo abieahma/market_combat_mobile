@@ -12,6 +12,8 @@ import {
   GENDER_CHANGE_COOLDOWN_MS,
   NICKNAME_MAX,
   NICKNAME_MIN,
+  PLATFORM_ACCOUNT,
+  PLATFORM_FEE_PERCENT,
 } from '../api/contract';
 import type {
   Account,
@@ -19,18 +21,25 @@ import type {
   AuthResult,
   ChallengeStarted,
   ChallengeStatus,
+  CurrencyBuyResult,
   ErrorCode,
+  GameCurrencyBalance,
+  GameEntry,
+  GameId,
+  GameList,
   Identity,
   MatchFinished,
   MatchFinishRequest,
   MatchStarted,
   Profile,
+  WalletTx,
   WalletView,
 } from '../api/contract';
 import type { ApiRequest, ApiResponse } from '../api/transport';
-import { rewardForPlace } from '../game/duel';
-import { WELCOME_BONUS } from '../wallet/ledger';
+import { MATCH_SECONDS } from '../game/duel';
+import { emptyLedger, LedgerState, post, WELCOME_BONUS } from '../wallet/ledger';
 import { Database, KeyValue } from './db';
+import { gameEntryProblem, PUBLISHED_GAMES } from './games';
 import { WalletError, WalletService } from './wallet-service';
 
 export const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
@@ -39,6 +48,10 @@ export const EMAIL_RESEND_MS = 30 * 1000;
 export const EMAIL_MAX_ATTEMPTS = 5;
 export const BOT_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 export const TELEGRAM_BOT = 'MarketCombatBot';
+/** A match not finished this long after its start is closed by the server (stake refunded). */
+export const MATCH_STALE_MS = (MATCH_SECONDS + 3) * 1000 + 2 * 60 * 1000;
+/** Upper bound for the equity a client may report: stake × this. */
+const MAX_EQUITY_MULTIPLE = 100;
 
 type AccountRow = Account;
 interface SessionRow {
@@ -60,11 +73,18 @@ interface ChallengeRow {
 interface MatchRow {
   id: string;
   accountId: string;
-  game: 'duel';
+  game: GameId;
   seed: number;
   startedAt: number;
+  requestId: string;
+  stake: number;
+  stakeLots: number;
+  startTx: WalletTx | null;
   finished?: MatchFinished;
 }
+
+/** Game currency ledger kinds: bought, put into a match, returned by a match, turned back into ABIE. */
+type CurrencyKind = 'buy' | 'stake' | 'settle' | 'convert';
 
 /** Messages "delivered" to the player outside the game. */
 export interface InboxMessage {
@@ -128,7 +148,7 @@ export class MockServer {
   now: () => number = () => Date.now();
 
   constructor(kv: KeyValue) {
-    this.db = new Database(kv, 'game', ['accounts', 'identities', 'sessions', 'profiles', 'challenges', 'matches']);
+    this.db = new Database(kv, 'game', ['accounts', 'identities', 'sessions', 'profiles', 'challenges', 'matches', 'games', 'currency']);
     this.devDb = new Database(kv, 'outside', ['inbox']);
     this.wallet = new WalletService(kv);
     this.registerRoutes();
@@ -143,6 +163,9 @@ export class MockServer {
 
   private async openAll() {
     await Promise.all([this.db.open(), this.devDb.open(), this.wallet.open()]);
+    // Games are published once; an entry already in the registry is never replaced.
+    const registry = this.db.table<GameEntry>('games');
+    for (const g of PUBLISHED_GAMES) if (!registry.get(g.id)) registry.put(g.id, g);
   }
 
   async handle(req: ApiRequest): Promise<ApiResponse> {
@@ -199,6 +222,100 @@ export class MockServer {
   private account(accountId: string): Account {
     const a = this.db.table<AccountRow>('accounts').get(accountId);
     return a ?? fail(404, 'not_found', 'No account');
+  }
+
+  // ------------------------------------------------- games and currencies
+
+  private game(id: unknown): GameEntry {
+    const g = typeof id === 'string' ? this.db.table<GameEntry>('games').get(id) : undefined;
+    return g ?? fail(404, 'not_found', 'Unknown game');
+  }
+
+  /** The game must be in the universe of the player's character. */
+  private playable(accountId: string, game: GameEntry): Profile {
+    const p = this.profile(accountId);
+    if (!p.character) return fail(409, 'conflict', 'Choose a character first');
+    if (game.universes !== 'all' && !game.universes.includes(p.character)) return fail(403, 'forbidden', 'This game is not in your universe');
+    return p;
+  }
+
+  private currencyLedger(accountId: string, game: GameId): LedgerState<CurrencyKind> {
+    return this.db.table<LedgerState<CurrencyKind>>('currency').get(`${accountId}:${game}`) ?? emptyLedger<CurrencyKind>();
+  }
+
+  private currencyPost(accountId: string, game: GameId, req: { id: string; kind: CurrencyKind; amount: number; ref?: string }) {
+    const res = post(this.currencyLedger(accountId, game), req, this.now());
+    if (!res.ok) return fail(409, res.error === 'insufficient_funds' ? 'insufficient_funds' : 'invalid_input', 'Game currency operation refused');
+    if (!res.duplicate) this.db.table<LedgerState<CurrencyKind>>('currency').put(`${accountId}:${game}`, res.state);
+    return res.tx;
+  }
+
+  private currencyBalance(accountId: string, game: GameEntry): GameCurrencyBalance {
+    return { game: game.id, code: game.currency!.code, balance: this.currencyLedger(accountId, game.id).balance };
+  }
+
+  /**
+   * Buys `lots` of a game currency. One operation: ABIE leave the player for
+   * the platform account, the currency arrives. Every part has an id derived
+   * from `key`, so a repeat changes nothing.
+   */
+  private buyCurrency(accountId: string, game: GameEntry, lots: number, key: string): WalletTx {
+    const { abie, units } = game.currency!.rate;
+    const now = this.now();
+    const tx = this.wallet.post(accountId, { id: `buy:${game.id}:${key}`, kind: 'currency_buy', amount: -lots * abie, ref: game.id }, now);
+    this.wallet.post(PLATFORM_ACCOUNT, { id: `sale:${accountId}:${game.id}:${key}`, kind: 'currency_sale', amount: lots * abie, ref: accountId }, now);
+    this.currencyPost(accountId, game.id, { id: `buy:${key}`, kind: 'buy', amount: lots * units, ref: tx.id });
+    return tx;
+  }
+
+  /**
+   * Closes a match: what it returned goes back to ABIE at the game's rate.
+   * The platform keeps PLATFORM_FEE_PERCENT of a profit and nothing of a loss.
+   */
+  private settle(m: MatchRow, place: number, equity: number, abandoned: boolean): MatchFinished {
+    const game = this.game(m.game);
+    const now = this.now();
+    // Matches saved before stakes existed have none.
+    const stake = m.stake ?? 0;
+    const stakeLots = m.stakeLots ?? 0;
+    const profit = equity - stake;
+    let fee = 0;
+    let payout = 0;
+    let tx: WalletTx | null = null;
+    if (game.currency) {
+      const { abie, units } = game.currency.rate;
+      fee = profit > 0 ? Math.ceil((profit * PLATFORM_FEE_PERCENT) / 100) : 0;
+      const back = equity - fee;
+      if (back > 0) {
+        this.currencyPost(m.accountId, game.id, { id: `settle:${m.id}`, kind: 'settle', amount: back, ref: m.id });
+        this.currencyPost(m.accountId, game.id, { id: `convert:${m.id}`, kind: 'convert', amount: -back, ref: m.id });
+        payout = Math.round((back * abie) / units);
+      }
+      if (payout > 0) {
+        tx = this.wallet.post(m.accountId, { id: `return:${m.id}`, kind: 'currency_return', amount: payout, ref: m.id }, now);
+        this.wallet.post(PLATFORM_ACCOUNT, { id: `payout:${m.id}`, kind: 'currency_payout', amount: -payout, ref: m.accountId }, now);
+      }
+    }
+    const net = payout - (game.currency ? stakeLots * game.currency.rate.abie : 0);
+    const p = this.profile(m.accountId);
+    const profile = abandoned
+      ? p
+      : this.saveProfile({
+          ...p,
+          stats: { matches: p.stats.matches + 1, wins: p.stats.wins + (place === 1 ? 1 : 0), earned: p.stats.earned + net },
+        });
+    const finished: MatchFinished = { matchId: m.id, place, stake, equity, profit, fee, payout, net, tx, profile };
+    if (abandoned) finished.abandoned = true;
+    this.db.table<MatchRow>('matches').put(m.id, { ...m, finished });
+    return finished;
+  }
+
+  /** Matches left without a finish (app closed, phone off) get their stake back. */
+  private settleStale(accountId: string) {
+    const deadline = this.now() - MATCH_STALE_MS;
+    for (const m of this.db.table<MatchRow>('matches').values()) {
+      if (m.accountId === accountId && !m.finished && m.startedAt < deadline) this.settle(m, 4, m.stake ?? 0, true);
+    }
   }
 
   /** Finds the account behind an identity or creates a new one. */
@@ -310,6 +427,7 @@ export class MockServer {
     // Profile.
     this.route('GET', '/v1/me', ({ req }) => {
       const id = this.accountIdFor(req);
+      this.settleStale(id);
       return { account: this.account(id), profile: this.profile(id) };
     });
 
@@ -374,6 +492,7 @@ export class MockServer {
     // Wallet.
     this.route('GET', '/v1/wallet', ({ req }): WalletView => {
       const id = this.accountIdFor(req);
+      this.settleStale(id);
       return { currency: 'ABIE', balance: this.wallet.balance(id) };
     });
 
@@ -382,36 +501,87 @@ export class MockServer {
       return this.wallet.page(id, query.cursor ?? null, Number(query.limit ?? 20));
     });
 
+    // Games and their currencies. There is no route that changes a published game.
+    this.route('GET', '/v1/games', ({ req }): GameList => {
+      this.accountIdFor(req);
+      return { items: this.db.table<GameEntry>('games').values().sort((a, b) => a.publishedAt - b.publishedAt) };
+    });
+
+    this.route('GET', '/v1/games/{id}/currency', ({ req, params }): GameCurrencyBalance => {
+      const accountId = this.accountIdFor(req);
+      const game = this.game(params[0]);
+      if (!game.currency) return fail(404, 'not_found', 'This game has no currency');
+      return this.currencyBalance(accountId, game);
+    });
+
+    this.route('POST', '/v1/games/{id}/currency/buy', ({ req, params }): CurrencyBuyResult => {
+      const accountId = this.accountIdFor(req);
+      const game = this.game(params[0]);
+      if (!game.currency) return fail(404, 'not_found', 'This game has no currency');
+      this.playable(accountId, game);
+      const body = (req.body ?? {}) as { lots?: unknown; requestId?: unknown };
+      const lots = body.lots;
+      if (typeof lots !== 'number' || !Number.isInteger(lots) || lots < 1 || lots > 1000) return fail(400, 'invalid_input', 'lots must be 1-1000');
+      if (typeof body.requestId !== 'string' || !body.requestId) return fail(400, 'invalid_input', 'requestId is required');
+      const tx = this.buyCurrency(accountId, game, lots, body.requestId);
+      return { tx, currency: this.currencyBalance(accountId, game) };
+    });
+
     // Matches.
     this.route('POST', '/v1/matches', ({ req }): MatchStarted => {
       const accountId = this.accountIdFor(req);
-      const game = (req.body as { game?: unknown })?.game;
-      if (game !== 'duel') return fail(400, 'invalid_input', 'Unknown game');
+      const body = (req.body ?? {}) as { game?: unknown; stakeLots?: unknown; requestId?: unknown };
+      const game = this.game(body.game);
+      this.playable(accountId, game);
+      if (typeof body.requestId !== 'string' || !body.requestId) return fail(400, 'invalid_input', 'requestId is required');
+      const requestId = body.requestId;
+      const matches = this.db.table<MatchRow>('matches');
+      const started = (m: MatchRow): MatchStarted => ({
+        matchId: m.id,
+        game: m.game,
+        seed: m.seed,
+        startedAt: m.startedAt,
+        stake: m.stake,
+        stakeLots: m.stakeLots,
+        tx: m.startTx,
+      });
+      // Same request again (the first answer was lost): the same match.
+      const existing = matches.values().find((m) => m.accountId === accountId && m.requestId === requestId);
+      if (existing) return started(existing);
+      this.settleStale(accountId);
+
       const id = randomId('m');
-      const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
-      const startedAt = this.now();
-      this.db.table<MatchRow>('matches').put(id, { id, accountId, game, seed, startedAt });
-      return { matchId: id, game, seed, startedAt };
+      let stake = 0;
+      let stakeLots = 0;
+      let startTx: WalletTx | null = null;
+      if (game.currency) {
+        const lots = body.stakeLots;
+        if (typeof lots !== 'number' || !Number.isInteger(lots) || lots < 1 || lots > 1000) return fail(400, 'invalid_input', 'stakeLots must be 1-1000');
+        const { units } = game.currency.rate;
+        stakeLots = lots;
+        stake = lots * units;
+        const missing = stake - this.currencyLedger(accountId, game.id).balance;
+        if (missing > 0) startTx = this.buyCurrency(accountId, game, Math.ceil(missing / units), `match:${requestId}`);
+        this.currencyPost(accountId, game.id, { id: `stake:${id}`, kind: 'stake', amount: -stake, ref: id });
+      }
+      const row: MatchRow = { id, accountId, game: game.id, seed: Math.floor(Math.random() * 0xffffffff) >>> 0, startedAt: this.now(), requestId, stake, stakeLots, startTx };
+      matches.put(id, row);
+      return started(row);
     });
 
     this.route('POST', '/v1/matches/{id}/finish', ({ req, params }): MatchFinished => {
       const accountId = this.accountIdFor(req);
       const m = this.db.table<MatchRow>('matches').get(params[0]);
       if (!m || m.accountId !== accountId) return fail(404, 'not_found', 'Unknown match');
-      if (m.finished) return m.finished; // repeated request: same answer, no second reward
+      if (m.finished) return m.finished; // repeated request: same answer, nothing paid twice
       const body = (req.body ?? {}) as Partial<MatchFinishRequest>;
       const place = body.place;
       if (typeof place !== 'number' || !Number.isInteger(place) || place < 1 || place > 4) return fail(400, 'invalid_input', 'Place must be 1-4');
-      const reward = rewardForPlace(place);
-      const tx = reward > 0 ? this.wallet.post(accountId, { id: `match:${m.id}`, kind: 'match_reward', amount: reward, ref: m.id }, this.now()) : null;
-      const p = this.profile(accountId);
-      const profile = this.db.table<Profile>('profiles').put(accountId, {
-        ...p,
-        stats: { matches: p.stats.matches + 1, wins: p.stats.wins + (place === 1 ? 1 : 0), earned: p.stats.earned + reward },
-      });
-      const finished: MatchFinished = { matchId: m.id, place, reward, tx, profile };
-      this.db.table<MatchRow>('matches').put(m.id, { ...m, finished });
-      return finished;
+      const equity = body.equity;
+      if (typeof equity !== 'number' || !Number.isInteger(equity) || equity < 0 || equity > m.stake * MAX_EQUITY_MULTIPLE) {
+        return fail(400, 'invalid_input', 'equity must be a whole number from 0');
+      }
+      return this.settle(m, place, equity, false);
     });
   }
 
@@ -467,6 +637,19 @@ export class MockServer {
     walletAudit: async () => {
       await this.openAll();
       return this.wallet.audit();
+    },
+    /**
+     * Publishes a game on the platform. Allowed once per game id: after that
+     * the entry, its universes and its currency rate never change.
+     */
+    publishGame: async (entry: GameEntry) => {
+      await this.openAll();
+      const problem = gameEntryProblem(entry);
+      if (problem) throw new ServerError(400, 'invalid_input', problem);
+      const registry = this.db.table<GameEntry>('games');
+      if (registry.get(entry.id)) throw new ServerError(409, 'conflict', 'This game is already published; its rate never changes');
+      registry.put(entry.id, { ...entry });
+      await this.db.flush();
     },
   };
 }

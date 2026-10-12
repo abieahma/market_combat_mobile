@@ -1,9 +1,10 @@
 import { useId, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg';
-import { Avatar } from '../components/Avatar';
+import { Avatar, AvatarPlaceholder } from '../components/Avatar';
+import { rateText } from '../components/StakeSheet';
 import { generateSeries, HISTORY_TICKS } from '../game/duel';
-import { GameId, GAMES, GameInfo } from '../games';
+import { ShownGame, shownGames } from '../games';
 import { useStore } from '../state/store';
 import { ClockIcon, SlidersIcon, UsersIcon } from '../ui/icons';
 import { Button } from '../ui/kit';
@@ -13,20 +14,24 @@ import { characterName, CHARACTERS, worldColor } from '../world/characters';
 
 export function HubScreen({
   onPlay,
+  onChoose,
   onSettings,
   onWallet,
   starting,
 }: {
-  onPlay: (id: GameId) => void;
+  onPlay: (game: ShownGame) => void;
+  /** Opens the character choice (needed before any game). */
+  onChoose: () => void;
   onSettings: () => void;
   onWallet: () => void;
   /** A match is being opened on the server. */
   starting: boolean;
 }) {
-  const { colors, t, profile, fmt, haptic, balance, scheme, settings } = useStore();
+  const { colors, t, profile, fmt, haptic, balance, scheme, settings, games } = useStore();
   const brand = scheme === 'dark' ? colors.goldHi : colors.gold;
   const character = profile?.character ?? null;
   const world = character ? CHARACTERS[character] : null;
+  const shown = shownGames(games, character);
   const stats = profile?.stats ?? { matches: 0, wins: 0, earned: 0 };
   const shownBalance = useCountUp(balance);
 
@@ -69,11 +74,25 @@ export function HubScreen({
 
           <View style={styles.playerRow}>
             <View style={styles.who}>
-              {character && <Avatar character={character} gender={profile?.gender ?? 'm'} size={64} />}
+              {character ? <Avatar character={character} gender={profile?.gender ?? 'm'} size={64} /> : <AvatarPlaceholder size={64} />}
               <View style={styles.whoText}>
                 <Text style={[styles.nick, { color: colors.text }]} numberOfLines={1}>
                   {profile?.nickname ?? ''}
                 </Text>
+                {!character && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('hub.choose')}
+                    hitSlop={8}
+                    onPress={() => {
+                      haptic('tap');
+                      onChoose();
+                    }}
+                    style={({ pressed }) => [styles.chooseLink, { borderColor: colors.gold, opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <Text style={[styles.chooseText, { color: colors.gold }]}>{t('hub.choose')}</Text>
+                  </Pressable>
+                )}
                 {character && world && (
                   <Text style={styles.worldLine} numberOfLines={2}>
                     <Text style={[styles.charName, { color: worldColor(character, scheme) }]}>{characterName(character, settings.lang)}</Text>
@@ -85,16 +104,29 @@ export function HubScreen({
             <View style={styles.stats}>
               <Stat label={t('stats.matches')} value={fmt(stats.matches)} />
               <Stat label={t('stats.wins')} value={fmt(stats.wins)} />
-              <Stat label={t('stats.earned')} value={fmt(stats.earned)} gold />
+              <Stat
+                label={t('stats.earned')}
+                value={`${stats.earned > 0 ? '+' : ''}${fmt(stats.earned)}`}
+                color={stats.earned < 0 ? colors.down : colors.gold}
+              />
             </View>
           </View>
         </Glass>
       </LiftPressable>
 
-      <Text style={[styles.section, { color: colors.text }]}>{t(world ? world.text.games : 'hub.games')}</Text>
+      <View style={styles.sectionHead}>
+        <Text style={[styles.section, { color: colors.text }]}>{t(world ? world.text.games : 'hub.games')}</Text>
+        {!character && <Text style={[type.body, { color: colors.muted }]}>{t('hub.chooseFirst')}</Text>}
+      </View>
 
-      {GAMES.map((g) => (
-        <GameTile key={g.id} game={g} onPlay={() => onPlay(g.id)} starting={starting} playLabel={t(world ? world.text.play : 'hub.play')} />
+      {shown.map((g) => (
+        <GameTile
+          key={g.info.id}
+          game={g}
+          onPress={() => (g.playable ? onPlay(g) : onChoose())}
+          starting={starting}
+          playLabel={g.playable ? t(world ? world.text.play : 'hub.play') : t('hub.choose')}
+        />
       ))}
 
       <Glass quiet style={styles.soon}>
@@ -105,11 +137,11 @@ export function HubScreen({
   );
 }
 
-function Stat({ label, value, gold }: { label: string; value: string; gold?: boolean }) {
+function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
   const { colors } = useStore();
   return (
     <View style={styles.stat}>
-      <Text style={[styles.statValue, { color: gold ? colors.gold : colors.text }]}>{value}</Text>
+      <Text style={[styles.statValue, { color: color ?? colors.text }]}>{value}</Text>
       <Text style={[styles.statLabel, { color: colors.muted }]} numberOfLines={1}>
         {label}
       </Text>
@@ -153,13 +185,17 @@ function ChartVignette({ width, height }: { width: number; height: number }) {
   );
 }
 
-function GameTile({ game, onPlay, starting, playLabel }: { game: GameInfo; onPlay: () => void; starting: boolean; playLabel: string }) {
-  const { colors, t } = useStore();
+function GameTile({ game: shown, onPress, starting, playLabel }: { game: ShownGame; onPress: () => void; starting: boolean; playLabel: string }) {
+  const { colors, t, fmt } = useStore();
   const [width, setWidth] = useState(0);
+  const game = shown.info;
+  // Before a character is chosen the games are only on display.
+  const inactive = !shown.playable;
+  const rate = rateText(shown, fmt);
 
   return (
-    <LiftPressable onPress={onPlay} disabled={starting} accessibilityLabel={t(game.title)}>
-      <Glass style={styles.tile}>
+    <LiftPressable onPress={onPress} disabled={starting || !shown.entry} accessibilityLabel={t(game.title)}>
+      <Glass style={[styles.tile, inactive && { opacity: 0.55 }]}>
         <View style={styles.vignette} onLayout={(e) => setWidth(Math.round(e.nativeEvent.layout.width))}>
           {width > 0 && <ChartVignette width={width} height={128} />}
         </View>
@@ -185,7 +221,8 @@ function GameTile({ game, onPlay, starting, playLabel }: { game: GameInfo; onPla
               </View>
             )}
           </View>
-          <Button label={playLabel} onPress={onPlay} big disabled={starting} />
+          {!!rate && <Text style={[styles.rate, { color: colors.gold }]}>{rate}</Text>}
+          <Button label={playLabel} onPress={onPress} big variant={inactive ? 'glass' : 'gold'} disabled={starting || !shown.entry} />
         </View>
       </Glass>
     </LiftPressable>
@@ -215,7 +252,11 @@ const styles = StyleSheet.create({
   stat: { flex: 1, gap: 2 },
   statValue: { fontFamily: fonts.displaySemi, fontSize: 24, lineHeight: 28, fontVariant: ['lining-nums'] },
   statLabel: { fontSize: 12 },
-  section: { fontFamily: fonts.displaySemi, fontSize: 24, marginBottom: -8 },
+  sectionHead: { gap: 4, marginBottom: -8 },
+  section: { fontFamily: fonts.displaySemi, fontSize: 24 },
+  chooseLink: { alignSelf: 'flex-start', marginTop: 6, borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 5 },
+  chooseText: { fontSize: 13, fontWeight: '700' },
+  rate: { fontFamily: fonts.displaySemi, fontSize: 18, fontVariant: ['lining-nums'] },
   tile: { padding: 0 },
   vignette: { height: 128, marginTop: 8 },
   tileBody: { paddingHorizontal: 20, paddingBottom: 20, paddingTop: 4, gap: 12 },

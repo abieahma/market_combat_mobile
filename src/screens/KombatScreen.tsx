@@ -191,7 +191,7 @@ export function KombatScreen({ fightId, onHub, onAgain }: { fightId: string; onH
         ) : (
           <View />
         )}
-        <Text style={[styles.turn, { color: colors.muted }]}>{tf('kombat.turn', { n: Math.min(view.turn, view.maxTurns), max: view.maxTurns })}</Text>
+        <Text style={[styles.turn, { color: colors.muted }]}>{tf('kombat.turn', { n: over ? view.log.length : Math.min(view.turn, view.maxTurns), max: view.maxTurns })}</Text>
         {active && (
           <View style={[styles.timer, { borderColor: left <= 5 ? colors.down : colors.line, backgroundColor: colors.surface }]}>
             <Text style={[styles.timerText, { color: left <= 5 ? colors.down : colors.text }]}>{left}</Text>

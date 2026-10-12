@@ -195,7 +195,7 @@ function Root() {
         screen = (
           <HubScreen
             onPlay={openStake}
-            onChoose={() => setRoute({ name: profile?.character ? 'character' : 'choose' })}
+            onChoose={() => setRoute(profile?.character ? { name: 'character' } : { name: 'choose' })}
             onPayEntry={payEntry}
             onPropose={() => setRoute({ name: 'proposals' })}
             starting={starting}

@@ -2,13 +2,13 @@
 # One-time setup inside UserLAnd (Ubuntu/Debian) on the phone:
 # installs git and Node.js 22, clones the project and installs dependencies.
 #
-#   curl -fsSL https://raw.githubusercontent.com/abieahma/mcombat/master/phone/setup.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/abieahma/market_combat_mobile/master/phone/setup.sh | bash
 #
 # Override with env vars: REPO=<git url>  DIR=<folder>
 set -euo pipefail
 
-REPO="${REPO:-https://github.com/abieahma/mcombat.git}"
-DIR="${DIR:-$HOME/mcombat}"
+REPO="${REPO:-https://github.com/abieahma/market_combat_mobile.git}"
+DIR="${DIR:-$HOME/market_combat_mobile}"
 NODE_MAJOR=22
 
 say() { printf '\n\033[1;34m▶ %s\033[0m\n' "$*"; }

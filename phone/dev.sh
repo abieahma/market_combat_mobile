@@ -3,8 +3,8 @@
 # background, pulls new commits from GitHub every few seconds, so changes
 # pushed from the chat show up in Expo Go by themselves (Fast Refresh).
 #
-#   ~/mcombat/phone/dev.sh            # check every 5 s
-#   SYNC_INTERVAL=10 ~/mcombat/phone/dev.sh
+#   ~/market_combat_mobile/phone/dev.sh            # check every 5 s
+#   SYNC_INTERVAL=10 ~/market_combat_mobile/phone/dev.sh
 set -uo pipefail
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"

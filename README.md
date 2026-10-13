@@ -1,4 +1,4 @@
-# mcombat
+# market_combat_mobile
 
 Expo (SDK 57, TypeScript). Разработка ведётся из чата, результат виден в двух местах:
 
@@ -10,14 +10,16 @@ Expo (SDK 57, TypeScript). Разработка ведётся из чата, р
 Один раз (в чистом Debian из UserLAnd нет сертификатов, поэтому сначала ставим их):
 
 ```bash
-sudo apt-get update && sudo apt-get install -y ca-certificates curl && curl -fsSL https://raw.githubusercontent.com/abieahma/mcombat/master/phone/setup.sh | bash
+sudo apt-get update && sudo apt-get install -y ca-certificates curl && curl -fsSL https://raw.githubusercontent.com/abieahma/market_combat_mobile/master/phone/setup.sh | bash
 ```
 
 Каждый раз, когда садимся работать:
 
 ```bash
-~/mcombat/phone/dev.sh
+~/market_combat_mobile/phone/dev.sh
 ```
+
+Если проект ставился раньше, он лежит в `~/mcombat`: тогда `~/mcombat/phone/dev.sh`. Старый адрес репозитория GitHub переадресует сам.
 
 Потом в Expo Go: **Enter URL manually** → `exp://127.0.0.1:8081`.
 

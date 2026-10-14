@@ -1,0 +1,10 @@
+{
+  "sha": "9f82d3c9da2d0159b8c009c2f6779ea04c81d904",
+  "message": "Phone: dev server listens on 127.0.0.1 so Expo Go can connect where localhost resolves to ::1; sync shows why git pull fails",
+  "builtAt": "2026-10-14T16:45:25.194Z",
+  "install": "success",
+  "typecheck": "success",
+  "stubTests": "success",
+  "export": "success",
+  "preview": "success"
+}

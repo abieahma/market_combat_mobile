@@ -1,0 +1,17 @@
+Starting Metro Bundler
+
+Web Bundled 13945ms index.ts (410 modules)
+
+› Assets (2):
+assets/fonts/CormorantGaramond-Bold.1546658e608910f8a7ec4ef16f1fc0de.ttf (161KB)
+assets/fonts/CormorantGaramond-SemiBold.d19777d9638f95b310d641008d58af0e.ttf (161KB)
+
+› web bundles (1):
+_expo/static/js/web/index-c0705bc161f97672c73f29470edc16b8.js (1.4MB)
+
+› Files (3):
+favicon.ico (15KB)
+index.html (1.2KB)
+metadata.json (49B)
+
+Exported: dist

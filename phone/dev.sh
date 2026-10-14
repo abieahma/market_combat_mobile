@@ -13,7 +13,9 @@ cd "$DIR"
 export NVM_DIR="$HOME/.nvm"
 # shellcheck disable=SC1091
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-export NODE_OPTIONS="--require $DIR/phone/fix-network.cjs ${NODE_OPTIONS:-}"
+# The dev server listens on "localhost". Where localhost means ::1 first, Expo Go,
+# which connects to 127.0.0.1, is refused; take IPv4 first so it listens on 127.0.0.1.
+export NODE_OPTIONS="--require $DIR/phone/fix-network.cjs --dns-result-order=ipv4first ${NODE_OPTIONS:-}"
 export EXPO_NO_TELEMETRY=1
 ulimit -n 4096 2>/dev/null || true
 
@@ -55,7 +57,10 @@ follow_rewritten_history() {
 
 follow_default_branch
 follow_rewritten_history
-git pull --ff-only -q || echo "[sync] не удалось подтянуть изменения — проверь интернет или локальные правки (git status)"
+if ! out="$(git pull --ff-only -q 2>&1)"; then
+  echo "[sync] не удалось подтянуть изменения: $(printf '%s' "$out" | tail -n 2 | tr '\n' ' ')"
+  echo "[sync] локальные правки: $(git status --short --untracked-files=no | head -n 5 | tr '\n' ' ')"
+fi
 [ -d node_modules ] || npm install --no-audit --no-fund
 
 sync_loop() {
@@ -64,11 +69,12 @@ sync_loop() {
     sleep "$INTERVAL"
     local before after
     before="$(git rev-parse HEAD)"
-    if ! git pull --ff-only -q 2>/dev/null; then
+    local out
+    if ! out="$(git pull --ff-only -q 2>&1)"; then
       follow_default_branch
       if ! follow_rewritten_history; then
         if [ "$warned" -eq 0 ]; then
-          echo "[sync] git pull не прошёл (нет сети или есть локальные правки). Повторяю каждые ${INTERVAL} с."
+          echo "[sync] git pull не прошёл: $(printf '%s' "$out" | tail -n 2 | tr '\n' ' ')— повторяю каждые ${INTERVAL} с."
           warned=1
         fi
         continue

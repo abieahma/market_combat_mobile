@@ -1,0 +1,10 @@
+{
+  "sha": "d7eb247f89e0d07538e95363b50942dd30a3ed9c",
+  "message": "Project notes: the server is the master and offline data merges into it, SQLite, one-request sync, the stub goes, a dev mode on the server, the wallet in its own database",
+  "builtAt": "2026-10-29T07:37:06.280Z",
+  "install": "success",
+  "typecheck": "success",
+  "stubTests": "success",
+  "export": "success",
+  "preview": "success"
+}

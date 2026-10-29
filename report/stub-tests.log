@@ -1,0 +1,59 @@
+ok - email: bad address rejected
+ok - email: code arrives, wrong code rejected, right code signs in (new account, 100 ABIE)
+ok - email: resend is rate limited for 30 s
+ok - email: 5 wrong attempts expire the code
+ok - profile: nickname rules
+ok - games: Chart Duel is common to all universes, its own currency has a fixed rate
+ok - matches: no character, no game
+ok - duel: stake bought with ABIE, same request = same match, profit back minus 10%, no prizes
+ok - duel: a loss returns what is left, no fee
+ok - currency: bought only with ABIE, once per key, ABIE go to the platform
+ok - history: a duel match is kept with its actions, and its replay is the same match
+ok - rate is fixed forever: no route changes a game, publishing again is refused
+ok - universes: a game of another universe cannot be played or bought
+ok - a match never finished is closed by the server: stake back, no fee, not counted
+ok - wallet: history newest first with pages
+ok - logout ends the session; signing in again restores the same account
+ok - telegram: pending until the bot confirms, then signs in once
+ok - phone via Telegram: shared number becomes the identity, masked
+ok - google: stub token accepted, garbage rejected, same Google account = same player
+ok - characters: 4 free skins, first choice is free and only once
+ok - appearance: free, once a week
+ok - character change: 5000 ABIE, refused when short, charged once per request
+ok - data survives a restart of the server (same storage)
+ok - network failures surface as network errors
+ok - reset wipes everything
+
+25 passed
+ok - kombat rules: 53 cards, four suits of 13 and a joker; each fighter its own deck by the seed
+ok - kombat rules: the same seed and plays give the same fight
+ok - kombat rules: a played card is paid, replaced from the deck, and a defence absorbs by its rank
+ok - kombat rules: own suit hits 25% harder; two cards of a suit in a row add a combo level
+ok - kombat rules: the joker becomes the card the fighter names
+ok - kombat rules: a hit while boosting a combo (J) breaks it; without a hit the J adds 2
+ok - kombat rules: tricks of the kings work when the hit gets through
+ok - kombat rules: a card without the energy for it, or not in hand, counts as a missed turn
+ok - kombat rules: a knockout or the last turn ends the fight
+ok - kombat: training with the computer has no stake and nothing to win
+ok - kombat: hands and plays are hidden from the opponent; the timer plays a missing card as a missed turn
+ok - kombat: the winner takes both stakes minus 10% of the win; the loser loses the stake
+ok - kombat: leaving a waiting fight returns the stake, leaving a fight loses it
+ok - kombat: energy boost is dear, bought once per key, spent one pvp fight at a time
+ok - kombat: the test opponent of the developer panel joins a waiting fight and plays
+ok - history: finished fights, newest first, with every turn; nobody sees another player's
+ok - kombat: fights of the old rules are reset once and their stakes come back
+ok - proposals: the offer must be accepted; bad drafts are refused
+ok - proposals: sent once per key, talk with the moderator, changes, approval publishes the game
+ok - paid entry: once per player, 10% to the platform, the rest to the author; author share of currency sales
+ok - rename: Waldberik; profiles saved with the old id are read with the new one
+
+21 passed
+ok - countries: phone numbers map to countries, +7 splits Russia and Kazakhstan
+ok - country: fixed at registration (phone first, else the device region) and never changed
+ok - ABIE price: 1 unit of the home money; disagreeing signals get the most expensive money
+ok - universe: leaving is free, coming back costs 50 ABIE once per key; outside no game can be played
+ok - universe: moving to another universe costs 5000 ABIE, works from outside, keeps ratings
+ok - one identifier, one cabinet: the bot merges a new phone into the Telegram cabinet, refuses two cabinets
+ok - registry: the platform's own duel moves to the player's money; author games are never touched
+
+7 passed

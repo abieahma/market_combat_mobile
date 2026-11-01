@@ -184,7 +184,7 @@ const expectErr = async (p, code) => { try { await p; assert.fail('expected ' + 
   await t('universes: a game of another universe cannot be played or bought', async () => {
     await server.dev.publishGame({ id: 'hubquiz', universes: ['ozonik'], currency: { code: 'HQ', rate: { abie: 2, units: 5 }, settle: 'none' }, publishedAt: Date.now() });
     const ids = (await api.games.list()).items.map((g) => g.id);
-    assert.deepEqual(ids.sort(), ['duel', 'hubquiz', 'kombat']);
+    assert.deepEqual(ids.sort(), ['duel', 'hubquiz', 'kombat', 'order']);
     await expectErr(api.matches.start({ game: 'hubquiz', stakeLots: 1, requestId: 'q1' }), 'forbidden');
     await expectErr(api.games.buyCurrency('hubquiz', 1, 'q1'), 'forbidden');
     await expectErr(api.games.buyCurrency('nope', 1, 'q1'), 'not_found');

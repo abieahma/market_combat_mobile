@@ -42,6 +42,16 @@ export const PUBLISHED_GAMES: GameEntry[] = [
     authorShare: 0,
     publishedAt: Date.UTC(2026, 9, 13),
   },
+  {
+    id: 'order',
+    universes: 'all',
+    // Boxes: 10 ABIE buy one box, counted in hundredths so the platform's 10% stays whole.
+    currency: { code: 'BOX', rate: { abie: 10, units: 100 }, settle: 'match' },
+    entry: { kind: 'free' },
+    author: null,
+    authorShare: 0,
+    publishedAt: Date.UTC(2026, 10, 1),
+  },
 ];
 
 /** Entries saved before entry prices and authors existed are free platform games. */

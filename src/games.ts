@@ -7,7 +7,7 @@ import { formatMoney } from './wallet/countries';
 import { MATCH_SECONDS } from './game/duel';
 import { StringKey } from './i18n/strings';
 
-export type GameId = 'duel' | 'kombat';
+export type GameId = 'duel' | 'kombat' | 'order';
 
 export interface GameInfo {
   id: GameId;
@@ -55,6 +55,18 @@ export const GAMES: GameInfo[] = [
     money: (units, { fmt }) => `${fmt(units)} KMB`,
     stakes: [5, 10, 25, 50],
     stakeText: 'kombat.stakeText',
+  },
+  {
+    id: 'order',
+    title: 'order.title',
+    tagline: 'order.tagline',
+    players: 8,
+    seconds: 60,
+    offline: false,
+    // Boxes, counted in hundredths: 100 → 1 📦.
+    money: (units, { fmt }) => `${fmt(units / 100, units % 100 === 0 ? 0 : 2)} 📦`,
+    stakes: [1, 2, 5, 10],
+    stakeText: 'order.stakeText',
   },
 ];
 

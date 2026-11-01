@@ -18,6 +18,9 @@ import type {
   KombatMode,
   KombatPlay,
   KombatView,
+  OrderAction,
+  OrderMode,
+  OrderView,
   HistoryDetail,
   HistoryPage,
   Offer,
@@ -93,6 +96,12 @@ export interface ApiClient {
     leave(id: string): Promise<KombatView>;
     boost(): Promise<KombatBoost>;
     buyBoost(pack: KombatBoostPackId, requestId: string): Promise<{ tx: WalletTx; boost: KombatBoost }>;
+  };
+  order: {
+    start(mode: OrderMode, stakeLots: number | undefined, requestId: string): Promise<OrderView>;
+    get(id: string): Promise<OrderView>;
+    /** Sends the actions of a shift that is over; the server counts the score itself. */
+    finish(id: string, actions: OrderAction[], endAt: number): Promise<OrderView>;
   };
   matches: {
     start(req: MatchStartRequest): Promise<MatchStarted>;
@@ -175,6 +184,11 @@ export function createApi(transport: Transport): ApiClient {
       leave: (id) => call('POST', `/v1/kombat/fights/${encodeURIComponent(id)}/leave`),
       boost: () => call('GET', '/v1/kombat/boost'),
       buyBoost: (pack, requestId) => call('POST', '/v1/kombat/boost', { pack, requestId }),
+    },
+    order: {
+      start: (mode, stakeLots, requestId) => call('POST', '/v1/order/shifts', { mode, stakeLots, requestId }),
+      get: (id) => call('GET', `/v1/order/shifts/${encodeURIComponent(id)}`),
+      finish: (id, actions, endAt) => call('POST', `/v1/order/shifts/${encodeURIComponent(id)}/finish`, { actions, endAt }),
     },
     matches: {
       start: (req) => call('POST', '/v1/matches', req),

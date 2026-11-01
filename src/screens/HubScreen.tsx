@@ -2,6 +2,7 @@ import { useId, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { Avatar, AvatarPlaceholder } from '../components/Avatar';
+import { OrderVignette } from '../components/OrderParts';
 import { rateText } from '../components/StakeSheet';
 import { generateSeries, HISTORY_TICKS } from '../game/duel';
 import { ShownGame, shownGames } from '../games';
@@ -315,7 +316,7 @@ function GameTile({
     <LiftPressable onPress={onPress} disabled={starting || !shown.entry} accessibilityLabel={t(game.title)}>
       <Glass style={[styles.tile, inactive && { opacity: 0.55 }]}>
         <View style={styles.vignette} onLayout={(e) => setWidth(Math.round(e.nativeEvent.layout.width))}>
-          {width > 0 && (game.id === 'kombat' ? <KombatVignette width={width} height={128} /> : <ChartVignette width={width} height={128} />)}
+          {width > 0 && (game.id === 'kombat' ? <KombatVignette width={width} height={128} /> : game.id === 'order' ? <OrderVignette width={width} height={128} /> : <ChartVignette width={width} height={128} />)}
         </View>
         <View style={styles.tileBody}>
           <Text style={[styles.tileTitle, { color: colors.text }]} numberOfLines={2}>

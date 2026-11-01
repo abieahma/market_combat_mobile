@@ -1,16 +1,18 @@
 // History of games on the server stub: the player's finished Chart Duel
-// matches and Market Kombat fights, newest first, and the details of one.
+// matches, Market Kombat fights and Order Picking shifts, newest first, and
+// the details of one.
 
 import type { DuelRecord, HistoryDetail, HistoryItem, HistoryPage } from '../api/contract';
 import { MATCH_SECONDS } from '../game/duel';
 import { fail } from './errors';
 import type { KombatHistory } from './kombat';
+import type { OrderHistory } from './order';
 import type { MatchRow, MockServer } from './server';
 
 const PAGE = 20;
 const MAX_PAGE = 50;
 
-export function registerHistoryRoutes(s: MockServer, kombat: KombatHistory) {
+export function registerHistoryRoutes(s: MockServer, kombat: KombatHistory, order?: OrderHistory) {
   const matches = () => s.db.table<MatchRow>('matches');
 
   const matchItem = (m: MatchRow): HistoryItem => {
@@ -38,7 +40,7 @@ export function registerHistoryRoutes(s: MockServer, kombat: KombatHistory) {
       .values()
       .filter((m) => m.accountId === accountId && m.finished)
       .map(matchItem);
-    return [...duel, ...kombat.items(accountId)].sort((a, b) => (b.finishedAt ?? b.startedAt) - (a.finishedAt ?? a.startedAt));
+    return [...duel, ...kombat.items(accountId), ...(order?.items(accountId) ?? [])].sort((a, b) => (b.finishedAt ?? b.startedAt) - (a.finishedAt ?? a.startedAt));
   };
 
   s.route('GET', '/v1/history', ({ req, query }): HistoryPage => {
@@ -68,6 +70,11 @@ export function registerHistoryRoutes(s: MockServer, kombat: KombatHistory) {
         payout: m.finished.payout,
       };
       return { item: matchItem(m), duel };
+    }
+    const shift = order?.view(accountId, id);
+    if (shift) {
+      const shiftItem = order!.items(accountId).find((i) => i.id === id);
+      if (shiftItem) return { item: shiftItem, order: shift };
     }
     const view = kombat.view(accountId, id);
     const item = view ? kombat.items(accountId).find((i) => i.id === id) : undefined;

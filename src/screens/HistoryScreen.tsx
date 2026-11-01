@@ -8,6 +8,7 @@ import type { DuelRecord, GameId, HistoryDetail, HistoryItem } from '../api/cont
 import { Avatar } from '../components/Avatar';
 import { DuelFeed, matchClock } from '../components/DuelFeed';
 import { HpChart, KombatReplay, TurnLog } from '../components/KombatParts';
+import { OrderDetail } from '../components/OrderParts';
 import { PriceChart } from '../components/PriceChart';
 import { GAMES } from '../games';
 import { DUEL_ME, HISTORY_TICKS, MATCH_TICKS, replayDuel, standings, TICK_MS } from '../game/duel';
@@ -19,7 +20,7 @@ import { fonts, radius, space } from '../ui/theme';
 import { characterName } from '../world/characters';
 import { useLookStyles, useType } from '../ui/look';
 
-const FILTERS: (GameId | null)[] = [null, 'duel', 'kombat'];
+const FILTERS: (GameId | null)[] = [null, 'duel', 'kombat', 'order'];
 
 function gameInfo(id: GameId) {
   return GAMES.find((g) => g.id === id) ?? null;
@@ -127,7 +128,7 @@ export function HistoryScreen({ game, onOpen, onBack }: { game: GameId | null; o
                   <Text style={{ color: o.color }}>{`  ${o.text}`}</Text>
                 </Text>
                 <Text style={[styles.rowMeta, { color: colors.muted }]} numberOfLines={1}>
-                  {opponent ? tf('history.vs', { name: opponent }) : tf('history.traders', { n: item.players })}
+                  {opponent ? tf('history.vs', { name: opponent }) : item.game === 'order' ? tf('order.pickers', { n: item.players }) : tf('history.traders', { n: item.players })}
                 </Text>
                 <Text style={[styles.rowMeta, tp.num, { color: colors.faint }]} numberOfLines={1}>
                   {formatWhen(item.finishedAt ?? item.startedAt)}
@@ -179,6 +180,7 @@ export function HistoryDetailScreen({ id, onBack }: { id: string; onBack: () => 
   const info = item ? gameInfo(item.game) : null;
   const o = item ? outcome(item) : null;
   const s = detail?.kombat?.settlement ?? null;
+  const os = detail?.order?.settlement ?? null;
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -203,6 +205,8 @@ export function HistoryDetailScreen({ id, onBack }: { id: string; onBack: () => 
                 <SummaryLine label={t('result.stake')} value={showMoney(info, item.stake)} />
                 {detail?.duel && <SummaryLine label={t('result.final')} value={showMoney(info, detail.duel.equity)} />}
                 {s && <SummaryLine label={t('result.final')} value={showMoney(info, s.back + s.fee)} />}
+                {os && !os.refunded && <SummaryLine label={t('order.won')} value={showMoney(info, os.back)} />}
+                {os && os.fee > 0 && <SummaryLine label={t('order.fee')} value={`−${showMoney(info, os.fee)}`} />}
                 {(detail?.duel?.fee ?? s?.fee ?? 0) > 0 && <SummaryLine label={t('result.fee')} value={`−${showMoney(info, detail?.duel?.fee ?? s?.fee ?? 0)}`} />}
                 <SummaryLine
                   label={t('result.net')}
@@ -230,6 +234,8 @@ export function HistoryDetailScreen({ id, onBack }: { id: string; onBack: () => 
           )}
         </>
       )}
+
+      {detail?.order && width > 0 && <OrderDetail view={detail.order} width={width} />}
 
       {detail?.duel && item && info && (detail.duel.replayable ? <DuelReplay rec={detail.duel} show={(u) => showMoney(info, u)} /> : <Text style={[tp.body, { color: colors.muted }]}>{t('history.noReplay')}</Text>)}
     </ScrollView>

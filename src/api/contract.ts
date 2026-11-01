@@ -701,12 +701,128 @@ export interface KombatBoost {
   fightsLeft: number;
 }
 
+// ------------------------------------------------------- Order Picking
+
+/**
+ * Order Picking ("Сборка заказа"): a 60-second shift at a warehouse island of
+ * 16 gofras. The picker takes goods from their box, the scanner shows for a
+ * moment which gofra a good goes to, a full gofra (two goods) is taken to its
+ * pre-sort along the walls. Rules: src/game/order.ts.
+ *
+ * Everyone in a room gets the same seed and plays the flow of goods of their
+ * slot, each at their own time; the other pickers on the floor are the
+ * shifts of the others played back. The app sends its actions when the shift
+ * is over; the server plays them again and counts the score itself.
+ *
+ * - stake: up to ORDER_PLAYERS players with equal stakes in boxes (bought
+ *   with ABIE). When the room closes (everyone played, or its time is up) the
+ *   best score takes the bank; the platform keeps PLATFORM_FEE_PERCENT of the
+ *   stakes of the others. Alone in a room, or all tied: the stakes come back.
+ * - training: with seven computer pickers; no stakes, nothing to win.
+ */
+export type OrderMode = 'training' | 'stake';
+export type OrderStatus = 'playing' | 'waiting' | 'settled' | 'abandoned';
+
+/**
+ * One tap of the player, by shift time in ms: take a good from the box, go to
+ * a gofra (put the good in hand there, or lift a full gofra), take the lifted
+ * gofra to a pre-sort, or scan the good in hand again.
+ */
+export type OrderAction =
+  | { t: number; type: 'take'; item: number }
+  | { t: number; type: 'gofra'; n: number }
+  | { t: number; type: 'sign'; pos: number }
+  | { t: number; type: 'scan' };
+
+export interface OrderScoreView {
+  correct: number;
+  sent: number;
+  mistakes: number;
+  missed: number;
+  bonus: number;
+  total: number;
+}
+
+/** Another picker of the room: a player, a test player of the developer panel, or the computer in training. */
+export interface OrderRival {
+  slot: number;
+  nickname: string;
+  character: CharacterId | null;
+  /** The computer of a training shift: its shift follows from the seed (src/game/order.ts, playBot). */
+  isBot: boolean;
+  finished: boolean;
+  score: OrderScoreView | null;
+  /** A finished player's actions, to play their shift back on the floor. */
+  actions: OrderAction[] | null;
+  endAt: number | null;
+}
+
+/** Boxes are counted in hundredths: a stake of one box is 100 units. */
+export interface OrderSettlement {
+  place: number;
+  players: number;
+  /** Players sharing the first place. */
+  winners: number;
+  stake: number;
+  /** Units back to this player before they turn into ABIE. */
+  back: number;
+  /** The platform's share of the stakes this player won. */
+  fee: number;
+  payout: number;
+  net: number;
+  /** Alone in the room, or everyone tied: the stake came back. */
+  refunded: boolean;
+  tx: WalletTx | null;
+}
+
+export interface OrderView {
+  id: string;
+  mode: OrderMode;
+  status: OrderStatus;
+  rules: number;
+  seed: number;
+  /** This player's slot: the flow of goods they play. */
+  slot: number;
+  startedAt: number;
+  serverNow: number;
+  /** stake: when the room closes even if not everyone played. */
+  closesAt: number | null;
+  stake: number;
+  stakeLots: number;
+  /** The ABIE purchase made for the stake, if one was needed. */
+  tx: WalletTx | null;
+  /** This player's actions and when they finished, once the shift is over. */
+  actions: OrderAction[] | null;
+  endAt: number | null;
+  score: OrderScoreView | null;
+  /** Place among the pickers of the room so far (training: among the computer pickers). */
+  place: number | null;
+  rivals: OrderRival[];
+  settlement: OrderSettlement | null;
+}
+
+/** POST /v1/order/shifts → OrderView */
+export interface OrderStartRequest {
+  mode: OrderMode;
+  /** stake only: whole lots of the box rate. */
+  stakeLots?: number;
+  requestId: string;
+}
+/**
+ * POST /v1/order/shifts/{id}/finish → OrderView. `endAt`: shift time the
+ * player finished (the bell, or earlier when they left). Repeating it changes nothing.
+ */
+export interface OrderFinishRequest {
+  actions: OrderAction[];
+  endAt: number;
+}
+
 // ------------------------------------------------------------------ history
 
 /**
- * The player's finished games, newest first: Chart Duel matches and Market
- * Kombat fights, training included.
- * GET /v1/history?game=duel|kombat&cursor=&limit=  → HistoryPage
+ * The player's finished games, newest first: Chart Duel matches, Market
+ * Kombat fights and Order Picking shifts, training included.
+ * GET /v1/history?game=duel|kombat|order&cursor=&limit=  → HistoryPage
  * GET /v1/history/{id}                            → HistoryDetail
  */
 export type HistoryOutcome = 'win' | 'loss' | 'draw' | 'cancelled' | 'abandoned';
@@ -757,6 +873,8 @@ export interface HistoryDetail {
   duel?: DuelRecord;
   /** Market Kombat fights: the whole fight with every turn. */
   kombat?: KombatView;
+  /** Order Picking shifts: the actions to play the shift back, the score and the room. */
+  order?: OrderView;
 }
 
 // ------------------------------------------------------- help (later step)

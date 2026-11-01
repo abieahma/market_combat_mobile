@@ -50,6 +50,7 @@ import { fail, randomId, ServerError } from './errors';
 import { gameEntryProblem, normalizeGame, PLATFORM_REVISIONS, PUBLISHED_GAMES } from './games';
 import { registerHistoryRoutes } from './history';
 import { registerKombatRoutes } from './kombat';
+import { registerOrderRoutes } from './order';
 import { moderate, registerProposalRoutes } from './proposals';
 import { WalletError, WalletService } from './wallet-service';
 
@@ -181,12 +182,14 @@ export class MockServer {
       'proposals',
       'fights',
       'boosts',
+      'orderShifts',
+      'orderRooms',
     ]);
     this.devDb = new Database(kv, 'outside', ['inbox']);
     this.wallet = new WalletService(kv);
     this.registerRoutes();
     registerProposalRoutes(this);
-    registerHistoryRoutes(this, registerKombatRoutes(this));
+    registerHistoryRoutes(this, registerKombatRoutes(this), registerOrderRoutes(this));
   }
 
   // ------------------------------------------------------------ plumbing

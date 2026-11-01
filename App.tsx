@@ -5,8 +5,9 @@ import { BackHandler, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { InboxBanner, Toast } from './src/components/Overlays';
 import { KombatLobby } from './src/components/KombatLobby';
+import { OrderLobby } from './src/components/OrderParts';
 import { StakeSheet } from './src/components/StakeSheet';
-import type { GameId, Proposal } from './src/api/contract';
+import type { GameId, OrderView, Proposal } from './src/api/contract';
 import { isApiError } from './src/api/transport';
 import { ShownGame, shownGames } from './src/games';
 import { CharacterScreen } from './src/screens/CharacterScreen';
@@ -16,6 +17,7 @@ import { HubScreen } from './src/screens/HubScreen';
 import { InboxScreen } from './src/screens/InboxScreen';
 import { KombatScreen } from './src/screens/KombatScreen';
 import { ModerationScreen } from './src/screens/ModerationScreen';
+import { OrderScreen } from './src/screens/OrderScreen';
 import { ProposalFormScreen, ProposalScreen, ProposalsScreen } from './src/screens/ProposalsScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { ResultScreen, SettleState } from './src/screens/ResultScreen';
@@ -37,6 +39,7 @@ type Route =
   | { name: 'duel'; matchId: string; seed: number; stake: number }
   | { name: 'result'; result: DuelResult; settle: SettleState }
   | { name: 'kombat'; fightId: string }
+  | { name: 'order'; shift: OrderView }
   | { name: 'proposals' }
   | { name: 'proposalNew' }
   | { name: 'proposal'; id: string }
@@ -72,6 +75,7 @@ function Root() {
   /** Last game played, for "Play again". */
   const [lastGame, setLastGame] = useState<ShownGame | null>(null);
   const [kombatLobby, setKombatLobby] = useState(false);
+  const [orderLobby, setOrderLobby] = useState(false);
 
   // After signing out, the next sign-in starts at the hub.
   useEffect(() => {
@@ -88,7 +92,7 @@ function Root() {
         return false;
       }
       if (route.name === 'hub') return false;
-      if (route.name === 'duel' || route.name === 'kombat') return true; // leaving a fight takes the in-game button
+      if (route.name === 'duel' || route.name === 'kombat' || route.name === 'order') return true; // leaving a fight takes the in-game button
       if (route.name === 'proposalNew' || route.name === 'proposal') {
         setRoute({ name: 'proposals' });
         return true;
@@ -138,9 +142,29 @@ function Root() {
     [failed, refresh],
   );
 
+  /** Order Picking: a training shift, or a shift for `lots` of stake in a room. */
+  const startOrder = useCallback(
+    async (mode: 'training' | 'stake', lots?: number) => {
+      setStarting(true);
+      try {
+        const v = await api.order.start(mode, lots, requestId());
+        setOrderLobby(false);
+        setStakeFor(null);
+        refresh();
+        setRoute({ name: 'order', shift: v });
+      } catch (e) {
+        failed(e);
+      } finally {
+        setStarting(false);
+      }
+    },
+    [failed, refresh],
+  );
+
   const play = useCallback(
     async (game: ShownGame, lots: number) => {
       if (game.info.id === 'kombat') return startKombat('pvp', lots);
+      if (game.info.id === 'order') return startOrder('stake', lots);
       setStarting(true);
       try {
         const m = await startMatch(game.info.id, lots);
@@ -152,12 +176,13 @@ function Root() {
         setStarting(false);
       }
     },
-    [startMatch, startKombat, failed],
+    [startMatch, startKombat, startOrder, failed],
   );
 
   const openStake = useCallback((game: ShownGame) => {
     setLastGame(game);
     if (game.info.id === 'kombat') setKombatLobby(true);
+    else if (game.info.id === 'order') setOrderLobby(true);
     else setStakeFor(game);
   }, []);
 
@@ -175,6 +200,7 @@ function Root() {
   );
 
   const kombatGame = shownGames(games, profile?.character ?? null, opened).find((g) => g.info.id === 'kombat') ?? null;
+  const orderGame = shownGames(games, profile?.character ?? null, opened).find((g) => g.info.id === 'order') ?? null;
 
   const saveResult = useCallback(
     async (result: DuelResult) => {
@@ -263,6 +289,11 @@ function Root() {
           <KombatScreen key={route.fightId} fightId={route.fightId} onHub={() => setRoute({ name: 'hub' })} onAgain={() => setKombatLobby(true)} />
         );
         break;
+      case 'order':
+        screen = (
+          <OrderScreen key={route.shift.id} start={route.shift} onHub={() => setRoute({ name: 'hub' })} onAgain={() => setOrderLobby(true)} />
+        );
+        break;
       case 'proposals':
         screen = (
           <ProposalsScreen
@@ -321,6 +352,16 @@ function Root() {
         onPvp={() => {
           setKombatLobby(false);
           if (kombatGame) setStakeFor(kombatGame);
+        }}
+        busy={starting}
+      />
+      <OrderLobby
+        visible={status === 'signedIn' && orderLobby}
+        onClose={() => setOrderLobby(false)}
+        onTraining={() => startOrder('training')}
+        onStake={() => {
+          setOrderLobby(false);
+          if (orderGame) setStakeFor(orderGame);
         }}
         busy={starting}
       />

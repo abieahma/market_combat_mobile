@@ -1,0 +1,10 @@
+{
+  "sha": "a4287b1c20aa641c4028dace5ef98e6281fda124",
+  "message": "Project notes: first release when all three games run on the server, APK only, 12 languages, Telegram and phone sign-in; rules replayed on the server; game rates",
+  "builtAt": "2026-11-01T13:28:05.892Z",
+  "install": "success",
+  "typecheck": "success",
+  "stubTests": "success",
+  "export": "success",
+  "preview": "success"
+}

@@ -198,6 +198,9 @@ export function OrderFloor({
       })}
       {ORDER_SIGNS.map(([r, c], pos) => {
         const presort = shift.signs[pos];
+        const name = cityName(t, presort);
+        // A long name gets a smaller font, so it is never cut.
+        const size = Math.min(citySize, Math.round(((cell - 6) / (name.length * 0.66)) * 10) / 10);
         const nums = wanted[presort];
         const wrong = wrongSign === pos;
         const here = place?.kind === 'sign' && place.pos === pos;
@@ -206,7 +209,7 @@ export function OrderFloor({
           <Pressable
             key={`s${pos}`}
             accessibilityRole="button"
-            accessibilityLabel={nums ? tf('order.a11ySignTarget', { city: cityName(t, presort), n: nums.join(', ') }) : tf('order.a11ySign', { city: cityName(t, presort) })}
+            accessibilityLabel={nums ? tf('order.a11ySignTarget', { city: name, n: nums.join(', ') }) : tf('order.a11ySign', { city: name })}
             disabled={!onSign}
             onPress={() => onSign?.(pos)}
             style={[
@@ -217,8 +220,8 @@ export function OrderFloor({
               here && { borderWidth: 2, borderColor: colors.goldText },
             ]}
           >
-            <Text style={[styles.city, { fontSize: citySize, color: SIGN.ink }]} numberOfLines={1}>
-              {cityName(t, presort)}
+            <Text style={[styles.city, { fontSize: size, color: SIGN.ink }]} numberOfLines={1}>
+              {name}
             </Text>
             {nums && !wrong && (
               <View style={[styles.badge, { borderColor: colors.up }]}>

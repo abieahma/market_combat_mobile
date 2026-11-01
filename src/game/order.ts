@@ -85,13 +85,13 @@ export const ORDER_GOOD_ICONS: Record<OrderGood, string> = {
  * a mistake in percent.
  */
 export const ORDER_BOT_LEVELS: readonly { lag: number; slip: number }[] = [
-  { lag: 250, slip: 4 },
-  { lag: 450, slip: 8 },
-  { lag: 800, slip: 18 },
-  { lag: 350, slip: 10 },
-  { lag: 600, slip: 6 },
-  { lag: 950, slip: 25 },
-  { lag: 700, slip: 14 },
+  { lag: 450, slip: 6 },
+  { lag: 650, slip: 10 },
+  { lag: 1000, slip: 20 },
+  { lag: 550, slip: 12 },
+  { lag: 800, slip: 8 },
+  { lag: 1200, slip: 25 },
+  { lag: 900, slip: 15 },
 ];
 
 // ------------------------------------------------------------- the floor
